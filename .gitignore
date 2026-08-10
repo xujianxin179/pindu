@@ -1,6 +1,12 @@
 node_modules/
 dist/
+dev-dist/
+*.tsbuildinfo
+scripts/shot-*.png
 .DS_Store
 *.local
 .vite/
 *.log
+scripts/zoom.png
+scripts/shot-bg.png
+scripts/shot-export.png
