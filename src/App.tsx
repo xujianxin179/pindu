@@ -75,7 +75,7 @@ function PatternCanvas({
     const ctx = canvas.getContext('2d')!
     canvas.width = pattern.width * CELL_SIZE
     canvas.height = pattern.height * CELL_SIZE
-    drawGrid(ctx, pattern, palette, 0, 0, highlightId, '#ffffff')
+    drawGrid(ctx, pattern, palette, 0, 0, highlightId, '#f5f5f5')
   }, [pattern, palette, highlightId])
 
   return <canvas ref={ref} />
