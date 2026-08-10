@@ -75,7 +75,7 @@ function PatternCanvas({
     const ctx = canvas.getContext('2d')!
     canvas.width = pattern.width * CELL_SIZE
     canvas.height = pattern.height * CELL_SIZE
-    drawGrid(ctx, pattern, palette, 0, 0, highlightId)
+    drawGrid(ctx, pattern, palette, 0, 0, highlightId, '#3a3a3c')
   }, [pattern, palette, highlightId])
 
   return <canvas ref={ref} />
@@ -163,6 +163,7 @@ function App() {
   const [longSide, setLongSide] = useState(DEFAULT_LONG_SIDE)
   const [maxColors, setMaxColors] = useState(DEFAULT_MAX_COLORS)
   const [dithering, setDithering] = useState(false)
+  const [removeBackground, setRemoveBackground] = useState(true)
   const [result, setResult] = useState<ConvertResult | null>(null)
   const [showLabels, setShowLabels] = useState(true)
   const [highlightId, setHighlightId] = useState<ColorId | null>(null)
@@ -184,9 +185,13 @@ function App() {
   useEffect(() => {
     if (!image) return
     const size = computeGridSize(image, longSide)
-    const r = convertImageToPattern(image, { ...size, maxColors, dithering }, MARD_PALETTE)
+    const r = convertImageToPattern(
+      image,
+      { ...size, maxColors, dithering, removeBackground },
+      MARD_PALETTE,
+    )
     setResult(r)
-  }, [image, longSide, maxColors, dithering])
+  }, [image, longSide, maxColors, dithering, removeBackground])
 
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -294,6 +299,14 @@ function App() {
             onChange={(e) => setDithering(e.target.checked)}
           />
           抖动
+        </label>
+        <label className="param-field">
+          <input
+            type="checkbox"
+            checked={removeBackground}
+            onChange={(e) => setRemoveBackground(e.target.checked)}
+          />
+          去背景
         </label>
         <label className="param-field">
           <input

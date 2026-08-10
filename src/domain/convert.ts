@@ -140,20 +140,53 @@ function ditherAndQuantize(sampled: RGB[], width: number, height: number, palett
 }
 
 /**
+ * 检测背景色：取图片边缘一圈像素的众数色（背景通常在边缘，主体居中）。
+ * 极小图（<2 像素宽或高）退化为一整圈采样，仍返回一个色。
+ */
+export function detectBackgroundColor(image: SourceImage): RGB {
+  const { width: w, height: h, pixels } = image
+  const counts = new Map<string, { rgb: RGB; n: number }>()
+  const key = (rgb: RGB) => `${rgb.r},${rgb.g},${rgb.b}`
+  const visit = (i: number) => {
+    const rgb = pixels[i]
+    const k = key(rgb)
+    const e = counts.get(k)
+    if (e) e.n++
+    else counts.set(k, { rgb, n: 1 })
+  }
+  // 顶/底整行 + 左/右中间列（不重复角点）
+  for (let x = 0; x < w; x++) {
+    visit(x)
+    visit((h - 1) * w + x)
+  }
+  for (let y = 1; y < h - 1; y++) {
+    visit(y * w)
+    visit(y * w + w - 1)
+  }
+  let best: { rgb: RGB; n: number } | null = null
+  for (const e of counts.values()) {
+    if (!best || e.n > best.n) best = e
+  }
+  return best!.rgb
+}
+
+/**
  * 图片转图案（核心转换管线）。
  * maxColors：先按"覆盖最多"选出用色子集（Active Palette），再在子集上量化；
- * dithering：默认关，开启时在（受限的）子集上用 Floyd-Steinberg 误差扩散。
+ * dithering：默认关，开启时在（受限的）子集上用 Floyd-Steinberg 误差扩散；
+ * removeBackground：默认开，检测边缘主色为背景色，与之接近的格子变空格（null）。
  */
 export function convertImageToPattern(
   image: SourceImage,
   params: ConvertParams,
   palette: ColorPalette,
 ): ConvertResult {
-  const { width, height, maxColors, dithering = false } = params
+  const { width, height, maxColors, dithering = false, removeBackground = true } = params
   const sampled = resample(image, width, height)
+  const bg = removeBackground ? detectBackgroundColor(image) : null
 
-  let retained: Set<ColorId>
-  let cells: ColorId[]
+  let retained: Set<ColorId | null>
+  let cells: (ColorId | null)[]
   if (maxColors !== undefined) {
     const initial = sampled.map((rgb) => nearestColorId(rgb, palette))
     retained = selectRetained(initial, maxColors, palette)
@@ -168,6 +201,19 @@ export function convertImageToPattern(
     retained = new Set(cells)
   }
 
+  // 背景色格子变空格（不参与算色）
+  if (bg) {
+    cells = cells.map((id, i) => {
+      const rgb = sampled[i]
+      const dr = rgb.r - bg.r
+      const dg = rgb.g - bg.g
+      const db = rgb.b - bg.b
+      const dist = dr * dr + dg * dg + db * db
+      return dist <= BG_TOLERANCE_SQ ? null : id
+    })
+    retained = new Set(cells.filter((id): id is ColorId => id !== null))
+  }
+
   const pattern: Pattern = { width, height, cells }
   const activePalette: ColorId[] = palette
     .filter((entry) => retained.has(entry.id))
@@ -175,3 +221,6 @@ export function convertImageToPattern(
 
   return { pattern, activePalette }
 }
+
+/** 背景判定容差（RGB 欧氏距离平方）：与背景色差 <= 30 视作背景。 */
+const BG_TOLERANCE_SQ = 30 * 30

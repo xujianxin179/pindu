@@ -8,3 +8,4 @@ scripts/shot-*.png
 .vite/
 *.log
 scripts/zoom.png
+scripts/shot-bg.png

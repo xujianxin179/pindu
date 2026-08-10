@@ -10,6 +10,7 @@ export const CELL_SIZE = 12
  * gridX/gridY 为网格区左上角偏移；canvas 尺寸由调用方负责。
  * highlightId 非空时：该色号的格子保持全亮并按行优先标序号（1,2,3…），
  * 其余格子变暗（拼豆定位辅助）。
+ * emptyColor 为空格（null）格子的填充色：导出图纸用白纸，预览用浅灰"孔"。
  */
 export function drawGrid(
   ctx: CanvasRenderingContext2D,
@@ -18,6 +19,7 @@ export function drawGrid(
   gridX: number,
   gridY: number,
   highlightId: ColorId | null = null,
+  emptyColor = '#ffffff',
 ) {
   const colorMap = new Map(palette.map((e) => [e.id, e.rgb]))
   // 高亮模式的序号：该色格子按行优先编号 1,2,3…
@@ -32,7 +34,7 @@ export function drawGrid(
     const y = Math.floor(i / pattern.width) * CELL_SIZE + gridY
     const id = pattern.cells[i]
     const rgb = id ? colorMap.get(id) : null
-    ctx.fillStyle = rgb ? `rgb(${rgb.r},${rgb.g},${rgb.b})` : '#ffffff'
+    ctx.fillStyle = rgb ? `rgb(${rgb.r},${rgb.g},${rgb.b})` : emptyColor
     ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE)
     ctx.strokeStyle = '#e0e0e0'
     ctx.lineWidth = 0.5

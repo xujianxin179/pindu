@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { convertImageToPattern, computeColorCounts } from './convert'
+import { convertImageToPattern, computeColorCounts, detectBackgroundColor } from './convert'
 import type { ColorPalette, Pattern, SourceImage } from './types'
 
 // 用一个独立的小色板做 worked example，expected 值来自手工推理，
@@ -23,7 +23,7 @@ describe('convertImageToPattern', () => {
         { r: 255, g: 255, b: 255 }, // 白
       ],
     }
-    const result = convertImageToPattern(image, { width: 2, height: 2 }, palette)
+    const result = convertImageToPattern(image, { width: 2, height: 2, removeBackground: false }, palette)
     expect(result.pattern.width).toBe(2)
     expect(result.pattern.height).toBe(2)
     expect(result.pattern.cells).toEqual(['R', 'G', 'B', 'W'])
@@ -35,7 +35,7 @@ describe('convertImageToPattern', () => {
       height: 1,
       pixels: [{ r: 200, g: 10, b: 10 }], // 接近红
     }
-    const result = convertImageToPattern(image, { width: 1, height: 1 }, palette)
+    const result = convertImageToPattern(image, { width: 1, height: 1, removeBackground: false }, palette)
     expect(result.pattern.cells).toEqual(['R'])
   })
 
@@ -47,7 +47,7 @@ describe('convertImageToPattern', () => {
       height: 4,
       pixels: Array.from({ length: 16 }, () => ({ ...red })),
     }
-    const result = convertImageToPattern(image, { width: 2, height: 2 }, palette)
+    const result = convertImageToPattern(image, { width: 2, height: 2, removeBackground: false }, palette)
     expect(result.pattern.cells).toEqual(['R', 'R', 'R', 'R'])
   })
 
@@ -60,7 +60,7 @@ describe('convertImageToPattern', () => {
         { r: 0, g: 0, b: 255 }, // 蓝
       ],
     }
-    const result = convertImageToPattern(image, { width: 2, height: 1 }, palette)
+    const result = convertImageToPattern(image, { width: 2, height: 1, removeBackground: false }, palette)
     expect(result.activePalette).toEqual(['R', 'B'])
   })
 
@@ -74,7 +74,7 @@ describe('convertImageToPattern', () => {
         { r: 255, g: 0, b: 0 }, // 红
       ],
     }
-    const result = convertImageToPattern(image, { width: 3, height: 1 }, palette)
+    const result = convertImageToPattern(image, { width: 3, height: 1, removeBackground: false }, palette)
     expect(result).not.toHaveProperty('colorCounts')
     // 算色由 computeColorCounts 派生，计数正确
     expect(computeColorCounts(result.pattern, result.activePalette).get('R')).toBe(2)
@@ -94,7 +94,7 @@ describe('convertImageToPattern', () => {
         { r: 255, g: 0, b: 0 }, // 红
       ],
     }
-    const result = convertImageToPattern(image, { width: 4, height: 1, maxColors: 2 }, palette)
+    const result = convertImageToPattern(image, { width: 4, height: 1, maxColors: 2, removeBackground: false }, palette)
     expect(result.pattern.cells).toEqual(['R', 'G', 'R', 'R'])
     expect(result.activePalette).toEqual(['R', 'G'])
   })
@@ -108,7 +108,7 @@ describe('convertImageToPattern', () => {
         { r: 0, g: 0, b: 255 }, // 蓝
       ],
     }
-    const result = convertImageToPattern(image, { width: 2, height: 1, maxColors: 3 }, palette)
+    const result = convertImageToPattern(image, { width: 2, height: 1, maxColors: 3, removeBackground: false }, palette)
     expect(result.pattern.cells).toEqual(['R', 'B'])
     expect(result.activePalette).toEqual(['R', 'B'])
   })
@@ -125,7 +125,7 @@ describe('convertImageToPattern', () => {
         { r: 150, g: 0, b: 110 }, // -> R
       ],
     }
-    const result = convertImageToPattern(image, { width: 2, height: 2, dithering: false }, palette)
+    const result = convertImageToPattern(image, { width: 2, height: 2, dithering: false, removeBackground: false }, palette)
     expect(result.pattern.cells).toEqual(['R', 'R', 'R', 'R'])
   })
 
@@ -140,7 +140,7 @@ describe('convertImageToPattern', () => {
         { r: 150, g: 0, b: 110 },
       ],
     }
-    const result = convertImageToPattern(image, { width: 2, height: 2, dithering: true }, palette)
+    const result = convertImageToPattern(image, { width: 2, height: 2, dithering: true, removeBackground: false }, palette)
     expect(result.pattern.cells).toEqual(['R', 'B', 'R', 'R'])
     expect(result.activePalette).toEqual(['R', 'B'])
   })
@@ -160,7 +160,7 @@ describe('convertImageToPattern', () => {
     }
     const result = convertImageToPattern(
       image,
-      { width: 2, height: 2, maxColors: 2, dithering: true },
+      { width: 2, height: 2, maxColors: 2, dithering: true, removeBackground: false },
       palette,
     )
     expect(result.activePalette.length).toBeLessThanOrEqual(2)
@@ -205,5 +205,88 @@ describe('computeColorCounts', () => {
         ['B', 0],
       ]),
     )
+  })
+})
+
+describe('detectBackgroundColor（边缘主色检测）', () => {
+  it('返回边缘像素的众数色', () => {
+    // 4x4：边缘 12 格白色、中心 4 格红色
+    const pixels = Array.from({ length: 16 }, () => ({ r: 255, g: 255, b: 255 }))
+    pixels[5] = { r: 255, g: 0, b: 0 }
+    pixels[6] = { r: 255, g: 0, b: 0 }
+    pixels[9] = { r: 255, g: 0, b: 0 }
+    pixels[10] = { r: 255, g: 0, b: 0 }
+    const image: SourceImage = { width: 4, height: 4, pixels }
+    expect(detectBackgroundColor(image)).toEqual({ r: 255, g: 255, b: 255 })
+  })
+
+  it('纯色图返回该色', () => {
+    const image: SourceImage = {
+      width: 2,
+      height: 2,
+      pixels: [
+        { r: 0, g: 0, b: 0 },
+        { r: 0, g: 0, b: 0 },
+        { r: 0, g: 0, b: 0 },
+        { r: 0, g: 0, b: 0 },
+      ],
+    }
+    expect(detectBackgroundColor(image)).toEqual({ r: 0, g: 0, b: 0 })
+  })
+
+  it('极小图（1x1）不抛错', () => {
+    const image: SourceImage = { width: 1, height: 1, pixels: [{ r: 1, g: 2, b: 3 }] }
+    expect(detectBackgroundColor(image)).toEqual({ r: 1, g: 2, b: 3 })
+  })
+})
+
+describe('convertImageToPattern 去背景', () => {
+  const bgPalette: ColorPalette = [
+    { id: 'W', name: '白', rgb: { r: 255, g: 255, b: 255 } },
+    { id: 'R', name: '红', rgb: { r: 255, g: 0, b: 0 } },
+  ]
+
+  it('removeBackground 开启时，与边缘主色接近的格子变 null', () => {
+    // 3x3：边缘白、中心红；去背景后边缘 null、中心 R
+    const image: SourceImage = {
+      width: 3,
+      height: 3,
+      pixels: [
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 3, height: 3, removeBackground: true },
+      bgPalette,
+    )
+    expect(result.pattern.cells).toEqual([
+      null, null, null,
+      null, 'R', null,
+      null, null, null,
+    ])
+    expect(result.activePalette).toEqual(['R'])
+  })
+
+  it('removeBackground 关闭时，背景色也量化成珠子（行为不变）', () => {
+    const image: SourceImage = {
+      width: 1,
+      height: 1,
+      pixels: [{ r: 255, g: 255, b: 255 }],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 1, height: 1, removeBackground: false },
+      bgPalette,
+    )
+    expect(result.pattern.cells).toEqual(['W'])
   })
 })

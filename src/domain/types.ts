@@ -30,12 +30,14 @@ export interface Pattern {
   cells: Cell[] // row-major，长度 = width * height
 }
 
-/** 图片转图案的参数。ticket 01 仅使用 width/height，maxColors/dithering 留给 ticket 02。 */
+/** 图片转图案的参数。 */
 export interface ConvertParams {
   width: number
   height: number
   maxColors?: number
   dithering?: boolean
+  /** 自动去掉背景色（边缘主色检测，接近的格子变空格）。 */
+  removeBackground?: boolean
 }
 
 /** 待转换的源图片：宽高 + 像素 RGB 数组（row-major）。 */
