@@ -5,21 +5,29 @@ import type { ColorPalette, Pattern, RGB, SourceImage } from './domain/types'
 
 const GRID_LONG_SIDE = 40
 const CELL_SIZE = 12
+/** 读入图片前先缩到长边不超过此值（px），限制内存峰值。 */
+const MAX_IMAGE_SIDE = 256
 
-/** 把用户选择的图片文件读成 SourceImage（用 Canvas 读像素 RGB）。 */
+/**
+ * 把用户选择的图片文件读成 SourceImage（用 Canvas 读像素 RGB）。
+ * 先缩到长边 MAX_IMAGE_SIDE 再读，避免 12MP 大图在 iPad Safari 上内存峰值过高。
+ */
 async function fileToSourceImage(file: File): Promise<SourceImage> {
   const bitmap = await createImageBitmap(file)
+  const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height))
+  const width = Math.max(1, Math.round(bitmap.width * scale))
+  const height = Math.max(1, Math.round(bitmap.height * scale))
   const canvas = document.createElement('canvas')
-  canvas.width = bitmap.width
-  canvas.height = bitmap.height
+  canvas.width = width
+  canvas.height = height
   const ctx = canvas.getContext('2d')!
-  ctx.drawImage(bitmap, 0, 0)
-  const { data } = ctx.getImageData(0, 0, bitmap.width, bitmap.height)
+  ctx.drawImage(bitmap, 0, 0, width, height)
+  const { data } = ctx.getImageData(0, 0, width, height)
   const pixels: RGB[] = []
   for (let i = 0; i < data.length; i += 4) {
     pixels.push({ r: data[i], g: data[i + 1], b: data[i + 2] })
   }
-  return { width: bitmap.width, height: bitmap.height, pixels }
+  return { width, height, pixels }
 }
 
 /** 固定参数：长边 GRID_LONG_SIDE，短边按图片宽高比算。 */
