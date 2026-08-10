@@ -14,6 +14,7 @@ const GUIDE_LINE_COLOR = '#fb2a40'
  * 非高亮时每格标色号；highlightId 非空时：该色号的格子保持全亮并按行优先标序号（1,2,3…），
  * 其余格子变暗（拼豆定位辅助）。
  * emptyColor 为空格（null）格子的填充色：导出图纸用白纸，预览用浅灰"孔"。
+ * showColorLabels 控制非高亮模式下是否每格标色号（高亮时始终标序号）。
  */
 export function drawGrid(
   ctx: CanvasRenderingContext2D,
@@ -24,6 +25,7 @@ export function drawGrid(
   highlightId: ColorId | null = null,
   emptyColor = '#ffffff',
   cellSize = CELL_SIZE,
+  showColorLabels = true,
 ) {
   const colorMap = new Map(palette.map((e) => [e.id, e.rgb]))
   // 色号/序号标注：字号随格子缩放，白字黑描边
@@ -59,8 +61,8 @@ export function drawGrid(
         ctx.fillStyle = '#ffffff'
         ctx.fillText(label, x + cellSize / 2, y + cellSize / 2)
       }
-    } else if (id !== null) {
-      // 普通模式：每格标色号
+    } else if (id !== null && showColorLabels) {
+      // 普通模式：每格标色号（可开关）
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'
       ctx.lineWidth = 3
       ctx.strokeText(id, x + cellSize / 2, y + cellSize / 2)

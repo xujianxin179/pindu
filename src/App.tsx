@@ -62,10 +62,12 @@ function PatternCanvas({
   pattern,
   palette,
   highlightId,
+  showColorLabels,
 }: {
   pattern: Pattern
   palette: ColorPalette
   highlightId: ColorId | null
+  showColorLabels: boolean
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
 
@@ -75,8 +77,8 @@ function PatternCanvas({
     const ctx = canvas.getContext('2d')!
     canvas.width = pattern.width * CELL_SIZE
     canvas.height = pattern.height * CELL_SIZE
-    drawGrid(ctx, pattern, palette, 0, 0, highlightId, '#f5f5f5')
-  }, [pattern, palette, highlightId])
+    drawGrid(ctx, pattern, palette, 0, 0, highlightId, '#f5f5f5', CELL_SIZE, showColorLabels)
+  }, [pattern, palette, highlightId, showColorLabels])
 
   return <canvas ref={ref} />
 }
@@ -165,6 +167,7 @@ function App() {
   const [removeBackground, setRemoveBackground] = useState(true)
   const [result, setResult] = useState<ConvertResult | null>(null)
   const [highlightId, setHighlightId] = useState<ColorId | null>(null)
+  const [showColorLabels, setShowColorLabels] = useState(true)
   const [works, setWorks] = useState<WorkSummary[]>([])
   const [editingWorkId, setEditingWorkId] = useState<string | null>(null)
   const [rename, setRename] = useState<{ id: string; name: string } | null>(null)
@@ -300,6 +303,14 @@ function App() {
           />
           去背景
         </label>
+        <label className="param-field">
+          <input
+            type="checkbox"
+            checked={showColorLabels}
+            onChange={(e) => setShowColorLabels(e.target.checked)}
+          />
+          预览标色号
+        </label>
       </div>
 
       {result && (
@@ -309,6 +320,7 @@ function App() {
               pattern={result.pattern}
               palette={MARD_PALETTE}
               highlightId={highlightId}
+              showColorLabels={showColorLabels}
             />
             <p className="grid-meta">
               {result.pattern.width} × {result.pattern.height} 格
