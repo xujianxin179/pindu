@@ -251,6 +251,7 @@ function ColorCountsList({
       {history.present.activePalette.map((id) => (
         <button
           key={id}
+          type="button"
           className={`count-chip${highlightId === id ? ' highlight' : ''}`}
           onClick={() => onHighlight(highlightId === id ? null : id)}
           title={`高亮 ${id}`}
@@ -345,6 +346,10 @@ function App() {
     const nextPattern = edit(present.pattern)
     const nextPalette = extendActivePalette(present.activePalette, selectedColor, MARD_PALETTE)
     setHistory(applyEdit(history, { pattern: nextPattern, activePalette: nextPalette }))
+    // 高亮色号若被编辑清除（图案中不再出现），自动取消高亮，避免"高亮对象不可见"
+    if (highlightId !== null && !nextPattern.cells.includes(highlightId)) {
+      setHighlightId(null)
+    }
   }
 
   function onUndo() {
@@ -392,6 +397,7 @@ function App() {
     setSelectedColor(work.activePalette[0] ?? MARD_PALETTE[0].id)
     setEditingWorkId(work.id)
     setSaveName(work.name)
+    setHighlightId(null)
     setImage(null)
   }
 
