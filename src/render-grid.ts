@@ -40,11 +40,12 @@ export function drawGrid(
     ctx.lineWidth = 0.5
     ctx.strokeRect(x, y, CELL_SIZE, CELL_SIZE)
 
-    // 高亮模式：非目标格变暗；目标格标序号（白字黑描边，亮色上可读）
-    if (highlightId !== null && id !== highlightId) {
+    // 高亮模式：非目标格变暗（空格保持原色，导出留白/预览孔不被涂暗）；
+    // 目标格标序号（白字黑描边，亮色上可读）
+    if (highlightId !== null && id !== null && id !== highlightId) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
       ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE)
-    } else if (highlightId !== null) {
+    } else if (highlightId !== null && id !== null) {
       highlightSeq++
       const label = String(highlightSeq)
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'

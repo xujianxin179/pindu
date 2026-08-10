@@ -140,10 +140,10 @@ function ditherAndQuantize(sampled: RGB[], width: number, height: number, palett
 }
 
 /**
- * 检测背景色：取图片边缘一圈像素的众数色（背景通常在边缘，主体居中）。
+ * 检测背景色：取图片边缘一圈像素中"第一个出现次数最多"的颜色（背景通常在边缘，主体居中）。
  * 极小图（<2 像素宽或高）退化为一整圈采样，仍返回一个色。
  */
-export function detectBackgroundColor(image: SourceImage): RGB {
+export function dominantEdgeColor(image: SourceImage): RGB {
   const { width: w, height: h, pixels } = image
   const counts = new Map<string, { rgb: RGB; n: number }>()
   const key = (rgb: RGB) => `${rgb.r},${rgb.g},${rgb.b}`
@@ -183,35 +183,43 @@ export function convertImageToPattern(
 ): ConvertResult {
   const { width, height, maxColors, dithering = false, removeBackground = true } = params
   const sampled = resample(image, width, height)
-  const bg = removeBackground ? detectBackgroundColor(image) : null
+  const bg = removeBackground ? dominantEdgeColor(image) : null
+
+  // 先去背景：与背景接近的格子在选色/量化前就置空，不占用用色数预算
+  let backgroundMask: boolean[] | null
+  if (bg) {
+    backgroundMask = sampled.map((rgb) => colorDist(rgb, bg) <= BG_TOLERANCE_SQ)
+  } else {
+    backgroundMask = null
+  }
 
   let retained: Set<ColorId | null>
   let cells: (ColorId | null)[]
   if (maxColors !== undefined) {
-    const initial = sampled.map((rgb) => nearestColorId(rgb, palette))
+    // 用色数选择只统计非背景格
+    const initial = sampled
+      .map((rgb, i) => (backgroundMask?.[i] ? null : nearestColorId(rgb, palette)))
+      .filter((id): id is ColorId => id !== null)
     retained = selectRetained(initial, maxColors, palette)
     const subsetPalette = palette.filter((e) => retained.has(e.id))
-    cells = dithering
-      ? ditherAndQuantize(sampled, width, height, subsetPalette)
-      : sampled.map((rgb) => nearestColorId(rgb, subsetPalette))
+    if (dithering) {
+      cells = ditherAndQuantize(sampled, width, height, subsetPalette).map((id, i) =>
+        backgroundMask?.[i] ? null : id,
+      )
+    } else {
+      cells = sampled.map((rgb, i) =>
+        backgroundMask?.[i] ? null : nearestColorId(rgb, subsetPalette),
+      )
+    }
   } else {
-    cells = dithering
-      ? ditherAndQuantize(sampled, width, height, palette)
-      : sampled.map((rgb) => nearestColorId(rgb, palette))
+    if (dithering) {
+      cells = ditherAndQuantize(sampled, width, height, palette).map((id, i) =>
+        backgroundMask?.[i] ? null : id,
+      )
+    } else {
+      cells = sampled.map((rgb, i) => (backgroundMask?.[i] ? null : nearestColorId(rgb, palette)))
+    }
     retained = new Set(cells)
-  }
-
-  // 背景色格子变空格（不参与算色）
-  if (bg) {
-    cells = cells.map((id, i) => {
-      const rgb = sampled[i]
-      const dr = rgb.r - bg.r
-      const dg = rgb.g - bg.g
-      const db = rgb.b - bg.b
-      const dist = dr * dr + dg * dg + db * db
-      return dist <= BG_TOLERANCE_SQ ? null : id
-    })
-    retained = new Set(cells.filter((id): id is ColorId => id !== null))
   }
 
   const pattern: Pattern = { width, height, cells }
@@ -224,3 +232,10 @@ export function convertImageToPattern(
 
 /** 背景判定容差（RGB 欧氏距离平方）：与背景色差 <= 30 视作背景。 */
 const BG_TOLERANCE_SQ = 30 * 30
+
+function colorDist(a: RGB, b: RGB): number {
+  const dr = a.r - b.r
+  const dg = a.g - b.g
+  const db = a.b - b.b
+  return dr * dr + dg * dg + db * db
+}

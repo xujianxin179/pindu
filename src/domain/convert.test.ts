@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { convertImageToPattern, computeColorCounts, detectBackgroundColor } from './convert'
+import { convertImageToPattern, computeColorCounts, dominantEdgeColor } from './convert'
 import type { ColorPalette, Pattern, SourceImage } from './types'
 
 // 用一个独立的小色板做 worked example，expected 值来自手工推理，
@@ -208,7 +208,7 @@ describe('computeColorCounts', () => {
   })
 })
 
-describe('detectBackgroundColor（边缘主色检测）', () => {
+describe('dominantEdgeColor（边缘主色检测）', () => {
   it('返回边缘像素的众数色', () => {
     // 4x4：边缘 12 格白色、中心 4 格红色
     const pixels = Array.from({ length: 16 }, () => ({ r: 255, g: 255, b: 255 }))
@@ -217,7 +217,7 @@ describe('detectBackgroundColor（边缘主色检测）', () => {
     pixels[9] = { r: 255, g: 0, b: 0 }
     pixels[10] = { r: 255, g: 0, b: 0 }
     const image: SourceImage = { width: 4, height: 4, pixels }
-    expect(detectBackgroundColor(image)).toEqual({ r: 255, g: 255, b: 255 })
+    expect(dominantEdgeColor(image)).toEqual({ r: 255, g: 255, b: 255 })
   })
 
   it('纯色图返回该色', () => {
@@ -231,12 +231,12 @@ describe('detectBackgroundColor（边缘主色检测）', () => {
         { r: 0, g: 0, b: 0 },
       ],
     }
-    expect(detectBackgroundColor(image)).toEqual({ r: 0, g: 0, b: 0 })
+    expect(dominantEdgeColor(image)).toEqual({ r: 0, g: 0, b: 0 })
   })
 
   it('极小图（1x1）不抛错', () => {
     const image: SourceImage = { width: 1, height: 1, pixels: [{ r: 1, g: 2, b: 3 }] }
-    expect(detectBackgroundColor(image)).toEqual({ r: 1, g: 2, b: 3 })
+    expect(dominantEdgeColor(image)).toEqual({ r: 1, g: 2, b: 3 })
   })
 })
 
@@ -288,5 +288,52 @@ describe('convertImageToPattern 去背景', () => {
       bgPalette,
     )
     expect(result.pattern.cells).toEqual(['W'])
+  })
+
+  it('全背景图 + maxColors：activePalette 为空、所有格为 null', () => {
+    const image: SourceImage = {
+      width: 2,
+      height: 2,
+      pixels: [
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 2, height: 2, maxColors: 1, removeBackground: true },
+      bgPalette,
+    )
+    expect(result.pattern.cells).toEqual([null, null, null, null])
+    expect(result.activePalette).toEqual([])
+  })
+
+  it('去背景先用色数：背景色不占用 maxColors 预算', () => {
+    // 2x2：白背景 + 1 红 + 1 绿内容；maxColors=1 时红/绿平局取色板顺序靠前的红，
+    // 绿格在 {R} 子集内也量化为 R（背景不占名额）
+    const p: ColorPalette = [
+      { id: 'W', name: '白', rgb: { r: 255, g: 255, b: 255 } },
+      { id: 'R', name: '红', rgb: { r: 255, g: 0, b: 0 } },
+      { id: 'G', name: '绿', rgb: { r: 0, g: 255, b: 0 } },
+    ]
+    const image: SourceImage = {
+      width: 2,
+      height: 2,
+      pixels: [
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 255, b: 255 },
+        { r: 0, g: 255, b: 0 },
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 2, height: 2, maxColors: 1, removeBackground: true },
+      p,
+    )
+    expect(result.pattern.cells).toEqual([null, 'R', null, 'R'])
+    expect(result.activePalette).toEqual(['R'])
   })
 })
