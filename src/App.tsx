@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, type ChangeEvent, type MouseEvent } from 'react'
+import { useState, useRef, useEffect, useMemo, type ChangeEvent, type PointerEvent } from 'react'
 import { convertImageToPattern, computeColorCounts } from './domain/convert'
 import { MARD_PALETTE } from './domain/palette'
 import {
@@ -13,7 +13,7 @@ import {
   extendActivePalette,
   type History,
 } from './domain/edit'
-import type { ColorId, ColorPalette, ConvertResult, Pattern, RGB, SourceImage } from './domain/types'
+import type { ColorId, ColorPalette, Pattern, RGB, SourceImage } from './domain/types'
 
 const CELL_SIZE = 12
 /** 读入图片前先缩到长边不超过此值（px），限制内存峰值。 */
@@ -24,6 +24,13 @@ const DEFAULT_MAX_COLORS = 30
 const MAX_PALETTE_SIZE = MARD_PALETTE.length
 
 type Tool = 'pen' | 'eraser' | 'fill' | 'picker'
+
+const TOOLS: { id: Tool; label: string }[] = [
+  { id: 'pen', label: '画笔' },
+  { id: 'eraser', label: '橡皮' },
+  { id: 'fill', label: '填充' },
+  { id: 'picker', label: '吸管' },
+]
 
 /**
  * 把用户选择的图片文件读成 SourceImage（用 Canvas 读像素 RGB）。
@@ -63,19 +70,23 @@ function PatternCanvas({
   pattern,
   palette,
   tool,
-  onCellPaint,
-  onFillRect,
+  onPaint,
+  onErase,
+  onFill,
   onPick,
 }: {
   pattern: Pattern
   palette: ColorPalette
   tool: Tool
-  onCellPaint: (x: number, y: number) => void
-  onFillRect: (x0: number, y0: number, x1: number, y1: number) => void
+  onPaint: (x: number, y: number) => void
+  onErase: (x: number, y: number) => void
+  onFill: (x0: number, y0: number, x1: number, y1: number) => void
   onPick: (x: number, y: number) => void
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
+  // 拖拽状态：画笔/橡皮逐格涂色的起点；填充工具记录矩形锚点
+  const dragStart = useRef<{ x: number; y: number } | null>(null)
+  const lastCell = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     const canvas = ref.current
@@ -97,108 +108,156 @@ function PatternCanvas({
   }, [pattern, palette])
 
   /** 事件坐标 -> 网格坐标；越界返回 null。 */
-  const cellAt = useCallback(
-    (e: MouseEvent<HTMLCanvasElement>) => {
-      const canvas = ref.current
-      if (!canvas) return null
-      const rect = canvas.getBoundingClientRect()
-      const x = Math.floor(((e.clientX - rect.left) / rect.width) * pattern.width)
-      const y = Math.floor(((e.clientY - rect.top) / rect.height) * pattern.height)
-      if (x < 0 || x >= pattern.width || y < 0 || y >= pattern.height) return null
-      return { x, y }
-    },
-    [pattern.width, pattern.height],
-  )
+  const cellAt = (e: PointerEvent<HTMLCanvasElement>) => {
+    const canvas = ref.current
+    if (!canvas) return null
+    const rect = canvas.getBoundingClientRect()
+    const x = Math.floor(((e.clientX - rect.left) / rect.width) * pattern.width)
+    const y = Math.floor(((e.clientY - rect.top) / rect.height) * pattern.height)
+    if (x < 0 || x >= pattern.width || y < 0 || y >= pattern.height) return null
+    return { x, y }
+  }
 
-  function onMouseDown(e: MouseEvent<HTMLCanvasElement>) {
+  function onPointerDown(e: PointerEvent<HTMLCanvasElement>) {
     const cell = cellAt(e)
     if (!cell) return
     if (tool === 'picker') {
       onPick(cell.x, cell.y)
       return
     }
-    if (tool === 'fill') {
-      onFillRect(cell.x, cell.y, cell.x, cell.y)
-      return
-    }
-    onCellPaint(cell.x, cell.y)
-    setDragStart(cell)
+    dragStart.current = cell
+    lastCell.current = cell
+    if (tool === 'fill') return
+    if (tool === 'eraser') onErase(cell.x, cell.y)
+    else onPaint(cell.x, cell.y)
   }
 
-  function onMouseEnter(e: MouseEvent<HTMLCanvasElement>) {
-    if (!dragStart) return
+  function onPointerMove(e: PointerEvent<HTMLCanvasElement>) {
+    if (!dragStart.current) return
     const cell = cellAt(e)
     if (!cell) return
-    onCellPaint(cell.x, cell.y)
+    if (tool === 'fill') {
+      lastCell.current = cell
+      return
+    }
+    if (lastCell.current && lastCell.current.x === cell.x && lastCell.current.y === cell.y) return
+    lastCell.current = cell
+    if (tool === 'eraser') onErase(cell.x, cell.y)
+    else onPaint(cell.x, cell.y)
   }
 
-  function onMouseUp() {
-    if (!dragStart) return
-    setDragStart(null)
+  function onPointerUp() {
+    const start = dragStart.current
+    const end = lastCell.current
+    dragStart.current = null
+    lastCell.current = null
+    if (tool === 'fill' && start && end) {
+      onFill(Math.min(start.x, end.x), Math.min(start.y, end.y), Math.max(start.x, end.x), Math.max(start.y, end.y))
+    }
+  }
+
+  function onPointerLeave() {
+    dragStart.current = null
+    lastCell.current = null
   }
 
   return (
     <canvas
       ref={ref}
-      onMouseDown={onMouseDown}
-      onMouseEnter={onMouseEnter}
-      onMouseUp={onMouseUp}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerLeave}
       style={{ touchAction: 'none' }}
     />
   )
 }
 
-/** 用色集色板：可选色号 + 当前选中高亮。 */
+/** 用色集色板条：可选色号 + 当前选中高亮 + "＋"展开全色板选外部色号。 */
 function ActivePaletteBar({
   activePalette,
   palette,
   selectedColor,
   onSelect,
+  onExtend,
 }: {
   activePalette: ColorId[]
   palette: ColorPalette
   selectedColor: ColorId
   onSelect: (id: ColorId) => void
+  onExtend: (id: ColorId) => void
 }) {
+  const [showAll, setShowAll] = useState(false)
+  const unselected = palette.filter((e) => !activePalette.includes(e.id))
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
-      {activePalette.map((id) => {
-        const entry = palette.find((e) => e.id === id)!
-        const isSelected = id === selectedColor
-        return (
-          <button
-            key={id}
-            onClick={() => onSelect(id)}
-            title={id}
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: 4,
-              border: isSelected ? '2px solid #333' : '1px solid #ccc',
-              background: `rgb(${entry.rgb.r},${entry.rgb.g},${entry.rgb.b})`,
-              padding: 0,
-              cursor: 'pointer',
-            }}
-          />
-        )
-      })}
+    <div style={{ marginTop: 8 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        {activePalette.map((id) => {
+          const entry = palette.find((e) => e.id === id)!
+          const isSelected = id === selectedColor
+          return (
+            <button
+              key={id}
+              onClick={() => onSelect(id)}
+              title={id}
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: 4,
+                border: isSelected ? '2px solid #333' : '1px solid #ccc',
+                background: `rgb(${entry.rgb.r},${entry.rgb.g},${entry.rgb.b})`,
+                padding: 0,
+                cursor: 'pointer',
+              }}
+            />
+          )
+        })}
+        <button
+          onClick={() => setShowAll((v) => !v)}
+          title="从全色板选色"
+          style={{ width: 20, height: 20, borderRadius: 4, border: '1px dashed #999', cursor: 'pointer' }}
+        >
+          ＋
+        </button>
+      </div>
+      {showAll && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6, borderTop: '1px solid #eee', paddingTop: 6 }}>
+          {unselected.map((entry) => (
+            <button
+              key={entry.id}
+              onClick={() => {
+                onExtend(entry.id)
+                setShowAll(false)
+              }}
+              title={entry.id}
+              style={{
+                width: 16,
+                height: 16,
+                borderRadius: 3,
+                border: '1px solid #ccc',
+                background: `rgb(${entry.rgb.r},${entry.rgb.g},${entry.rgb.b})`,
+                padding: 0,
+                cursor: 'pointer',
+              }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
 /** 算色清单：按 Active Palette 顺序列出每个色号 + 颜色样块 + 数量。 */
-function ColorCountsList({
-  result,
-  palette,
-}: {
-  result: ConvertResult
-  palette: ColorPalette
-}) {
+function ColorCountsList({ history, palette }: { history: History; palette: ColorPalette }) {
+  const counts = useMemo(
+    () => computeColorCounts(history.present.pattern, history.present.activePalette),
+    [history],
+  )
   return (
     <div>
-      {result.activePalette.map((id) => {
+      {history.present.activePalette.map((id) => {
         const entry = palette.find((e) => e.id === id)!
-        const count = result.colorCounts.get(id) ?? 0
+        const count = counts.get(id) ?? 0
         return (
           <span
             key={id}
@@ -228,72 +287,33 @@ function App() {
   const [longSide, setLongSide] = useState(DEFAULT_LONG_SIDE)
   const [maxColors, setMaxColors] = useState(DEFAULT_MAX_COLORS)
   const [dithering, setDithering] = useState(false)
-  const [result, setResult] = useState<ConvertResult | null>(null)
   const [history, setHistory] = useState<History | null>(null)
-  const [activePalette, setActivePalette] = useState<ColorId[]>([])
   const [tool, setTool] = useState<Tool>('pen')
   const [selectedColor, setSelectedColor] = useState<ColorId>(MARD_PALETTE[0].id)
-  const fillStart = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     if (!image) return
     const size = computeGridSize(image, longSide)
     const r = convertImageToPattern(image, { ...size, maxColors, dithering }, MARD_PALETTE)
-    setResult(r)
-    setHistory(createHistory(r.pattern))
-    setActivePalette(r.activePalette)
+    setHistory(createHistory({ pattern: r.pattern, activePalette: r.activePalette }))
     setSelectedColor(r.activePalette[0] ?? MARD_PALETTE[0].id)
   }, [image, longSide, maxColors, dithering])
 
-  /** 把编辑后的新 Pattern 应用到历史栈，并重算派生数据。 */
-  function commitEdit(next: Pattern, extended: ColorId[]) {
+  /** 应用一个编辑，把新快照推进历史栈。 */
+  function commitEdit(edit: (pattern: Pattern) => Pattern) {
     if (!history) return
-    const h = applyEdit(history, next)
-    setHistory(h)
-    setActivePalette(extended)
-    const counts = computeColorCounts(h.present, extended)
-    setResult({ pattern: h.present, activePalette: extended, colorCounts: counts })
-  }
-
-  function onCellPaint(x: number, y: number) {
-    if (!history) return
-    const next = setCell(history.present, x, y, selectedColor)
-    const extended = extendActivePalette(activePalette, selectedColor, MARD_PALETTE)
-    commitEdit(next, extended)
-  }
-
-  function onEraser(x: number, y: number) {
-    if (!history) return
-    commitEdit(eraseCell(history.present, x, y), activePalette)
-  }
-
-  function onFill(x0: number, y0: number, x1: number, y1: number) {
-    if (!history) return
-    commitEdit(fillRect(history.present, { x0, y0, x1, y1 }, selectedColor), activePalette)
-  }
-
-  function onPick(x: number, y: number) {
-    if (!history) return
-    const id = colorAt(history.present, x, y)
-    if (id) setSelectedColor(id)
+    const present = history.present
+    const nextPattern = edit(present.pattern)
+    const nextPalette = extendActivePalette(present.activePalette, selectedColor, MARD_PALETTE)
+    setHistory(applyEdit(history, { pattern: nextPattern, activePalette: nextPalette }))
   }
 
   function onUndo() {
-    if (!history) return
-    const h = undo(history)
-    if (h) {
-      setHistory(h)
-      setResult({ pattern: h.present, activePalette, colorCounts: computeColorCounts(h.present, activePalette) })
-    }
+    if (history) setHistory((h) => undo(h!) ?? h)
   }
 
   function onRedo() {
-    if (!history) return
-    const h = redo(history)
-    if (h) {
-      setHistory(h)
-      setResult({ pattern: h.present, activePalette, colorCounts: computeColorCounts(h.present, activePalette) })
-    }
+    if (history) setHistory((h) => redo(h!) ?? h)
   }
 
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
@@ -302,6 +322,8 @@ function App() {
     const img = await fileToSourceImage(file)
     setImage(img)
   }
+
+  const present = history?.present.pattern ?? null
 
   return (
     <div style={{ padding: 16 }}>
@@ -341,57 +363,54 @@ function App() {
       )}
       {history && (
         <div style={{ marginTop: 12 }}>
-          <button onClick={() => setTool('pen')} disabled={tool === 'pen'}>
-            画笔
-          </button>{' '}
-          <button onClick={() => setTool('eraser')} disabled={tool === 'eraser'}>
-            橡皮
-          </button>{' '}
-          <button onClick={() => setTool('fill')} disabled={tool === 'fill'}>
-            填充
-          </button>{' '}
-          <button onClick={() => setTool('picker')} disabled={tool === 'picker'}>
-            吸管
-          </button>{' '}
-          <button onClick={onUndo} disabled={!undo(history)}>
+          {TOOLS.map((t) => (
+            <button key={t.id} onClick={() => setTool(t.id)} disabled={tool === t.id}>
+              {t.label}
+            </button>
+          ))}{' '}
+          <button onClick={onUndo} disabled={!history || undo(history) === null}>
             撤销
           </button>{' '}
-          <button onClick={onRedo} disabled={!redo(history)}>
+          <button onClick={onRedo} disabled={!history || redo(history) === null}>
             重做
           </button>
         </div>
       )}
       {history && (
         <ActivePaletteBar
-          activePalette={activePalette}
+          activePalette={history.present.activePalette}
           palette={MARD_PALETTE}
           selectedColor={selectedColor}
           onSelect={setSelectedColor}
+          onExtend={(id) => {
+            setHistory(
+              applyEdit(history, {
+                pattern: history.present.pattern,
+                activePalette: extendActivePalette(history.present.activePalette, id, MARD_PALETTE),
+              }),
+            )
+            setSelectedColor(id)
+          }}
         />
       )}
-      {history && (
+      {history && present && (
         <div style={{ marginTop: 8 }}>
           <PatternCanvas
-            pattern={history.present}
+            pattern={present}
             palette={MARD_PALETTE}
             tool={tool}
-            onCellPaint={tool === 'eraser' ? onEraser : onCellPaint}
-            onFillRect={(x0, y0, x1, y1) => {
-              if (tool !== 'fill') return
-              const start = fillStart.current
-              if (!start) {
-                fillStart.current = { x: x0, y: y0 }
-              } else {
-                onFill(start.x, start.y, x1, y1)
-                fillStart.current = null
-              }
+            onPaint={(x, y) => commitEdit((p) => setCell(p, x, y, selectedColor))}
+            onErase={(x, y) => commitEdit((p) => eraseCell(p, x, y))}
+            onFill={(x0, y0, x1, y1) => commitEdit((p) => fillRect(p, { x0, y0, x1, y1 }, selectedColor))}
+            onPick={(x, y) => {
+              const id = colorAt(present, x, y)
+              if (id) setSelectedColor(id)
             }}
-            onPick={onPick}
           />
           <p style={{ color: '#666' }}>
-            {history.present.width} × {history.present.height} 格
+            {present.width} × {present.height} 格
           </p>
-          {result && <ColorCountsList result={result} palette={MARD_PALETTE} />}
+          <ColorCountsList history={history} palette={MARD_PALETTE} />
         </div>
       )}
     </div>

@@ -61,42 +61,52 @@ describe('fillRect', () => {
 })
 
 describe('撤销 / 重做', () => {
+  const snap = (pattern: Pattern, activePalette: string[] = []) => ({ pattern, activePalette })
+
   it('applyEdit 推进历史，undo 逐级回退', () => {
-    const h0 = createHistory(grid(2, 1))
-    const h1 = applyEdit(h0, setCell(h0.present, 0, 0, 'R'))
-    const h2 = applyEdit(h1, setCell(h1.present, 1, 0, 'B'))
-    expect(h2.present.cells).toEqual(['R', 'B'])
-    expect(undo(h2)!.present.cells).toEqual(['R', null])
-    expect(undo(undo(h2)!)!.present.cells).toEqual([null, null])
+    const h0 = createHistory(snap(grid(2, 1)))
+    const h1 = applyEdit(h0, snap(setCell(h0.present.pattern, 0, 0, 'R')))
+    const h2 = applyEdit(h1, snap(setCell(h1.present.pattern, 1, 0, 'B')))
+    expect(h2.present.pattern.cells).toEqual(['R', 'B'])
+    expect(undo(h2)!.present.pattern.cells).toEqual(['R', null])
+    expect(undo(undo(h2)!)!.present.pattern.cells).toEqual([null, null])
   })
 
   it('undo 到顶返回 null', () => {
-    const h = createHistory(grid(2, 1))
+    const h = createHistory(snap(grid(2, 1)))
     expect(undo(h)).toBeNull()
   })
 
+  it('undo/redo 连同当时的用色集一起恢复', () => {
+    const h0 = createHistory(snap(grid(2, 1), ['R']))
+    const h1 = applyEdit(h0, snap(setCell(h0.present.pattern, 0, 0, 'R'), ['R', 'G']))
+    const h2 = applyEdit(h1, snap(setCell(h1.present.pattern, 1, 0, 'G'), ['R', 'G']))
+    expect(undo(h2)!.present.activePalette).toEqual(['R', 'G'])
+    expect(redo(undo(h2)!)!.present.activePalette).toEqual(['R', 'G'])
+  })
+
   it('redo 重做已撤销的操作', () => {
-    const h0 = createHistory(grid(2, 1))
-    const h1 = applyEdit(h0, setCell(h0.present, 0, 0, 'R'))
-    const h2 = applyEdit(h1, setCell(h1.present, 1, 0, 'B'))
+    const h0 = createHistory(snap(grid(2, 1)))
+    const h1 = applyEdit(h0, snap(setCell(h0.present.pattern, 0, 0, 'R')))
+    const h2 = applyEdit(h1, snap(setCell(h1.present.pattern, 1, 0, 'B')))
     const u = undo(h2)!
-    expect(redo(u)!.present.cells).toEqual(['R', 'B'])
+    expect(redo(u)!.present.pattern.cells).toEqual(['R', 'B'])
     expect(redo(redo(u)!)).toBeNull()
   })
 
   it('redo 到顶返回 null', () => {
-    const h = createHistory(grid(2, 1))
+    const h = createHistory(snap(grid(2, 1)))
     expect(redo(h)).toBeNull()
   })
 
   it('applyEdit 清空 future（新分支后不能再 redo）', () => {
-    const h0 = createHistory(grid(2, 1))
-    const h1 = applyEdit(h0, setCell(h0.present, 0, 0, 'R'))
-    const h2 = applyEdit(h1, setCell(h1.present, 1, 0, 'B'))
+    const h0 = createHistory(snap(grid(2, 1)))
+    const h1 = applyEdit(h0, snap(setCell(h0.present.pattern, 0, 0, 'R')))
+    const h2 = applyEdit(h1, snap(setCell(h1.present.pattern, 1, 0, 'B')))
     const u = undo(h2)!
-    const branched = applyEdit(u, setCell(u.present, 0, 0, 'W'))
+    const branched = applyEdit(u, snap(setCell(u.present.pattern, 0, 0, 'W')))
     expect(redo(branched)).toBeNull()
-    expect(branched.present.cells).toEqual(['W', null])
+    expect(branched.present.pattern.cells).toEqual(['W', null])
   })
 })
 

@@ -42,19 +42,25 @@ export function fillRect(
   return { ...pattern, cells }
 }
 
-/** 历史栈：present 为当前图案，past/future 为可回退/重做的快照。 */
-export interface History {
-  present: Pattern
-  past: Pattern[]
-  future: Pattern[]
+/** 历史快照：图案 + 当时的用色集（撤销/重做时一起恢复）。 */
+export interface Snapshot {
+  pattern: Pattern
+  activePalette: ColorId[]
 }
 
-export function createHistory(initial: Pattern): History {
+/** 历史栈：present 为当前快照，past/future 为可回退/重做的快照。 */
+export interface History {
+  present: Snapshot
+  past: Snapshot[]
+  future: Snapshot[]
+}
+
+export function createHistory(initial: Snapshot): History {
   return { present: initial, past: [], future: [] }
 }
 
-/** 应用一个编辑（传入已变换后的 pattern），推进历史并清空 future。 */
-export function applyEdit(history: History, next: Pattern): History {
+/** 应用一个编辑（传入已变换后的快照），推进历史并清空 future。 */
+export function applyEdit(history: History, next: Snapshot): History {
   return { present: next, past: [...history.past, history.present], future: [] }
 }
 
