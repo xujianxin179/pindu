@@ -9,7 +9,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon-180.png'],
+      devOptions: { enabled: true },
       manifest: {
         name: 'pinDu 拼豆',
         short_name: 'pinDu',
@@ -25,10 +25,15 @@ export default defineConfig({
             type: 'image/png',
             purpose: 'any',
           },
+          {
+            src: '/icon.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+            purpose: 'any',
+          },
         ],
       },
       workbox: {
-        // 运行时缓存 Google Fonts 等跨域资源不必；这里是纯本地应用，预缓存构建产物即可
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
       },
     }),
