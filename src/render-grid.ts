@@ -19,6 +19,13 @@ export function drawGrid(
   highlightId: ColorId | null = null,
 ) {
   const colorMap = new Map(palette.map((e) => [e.id, e.rgb]))
+  // 高亮模式的序号：该色格子按行优先编号 1,2,3…
+  let highlightSeq = 0
+  if (highlightId !== null) {
+    ctx.font = 'bold 8px ui-monospace, "SF Mono", Consolas, monospace'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+  }
   for (let i = 0; i < pattern.cells.length; i++) {
     const x = (i % pattern.width) * CELL_SIZE + gridX
     const y = Math.floor(i / pattern.width) * CELL_SIZE + gridY
@@ -30,10 +37,17 @@ export function drawGrid(
     ctx.lineWidth = 0.5
     ctx.strokeRect(x, y, CELL_SIZE, CELL_SIZE)
 
-    // 高亮模式：非目标格变暗
+    // 高亮模式：非目标格变暗；目标格标序号（白字黑描边，亮色上可读）
     if (highlightId !== null && id !== highlightId) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
       ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE)
+    } else if (highlightId !== null && id === highlightId) {
+      highlightSeq++
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'
+      ctx.lineWidth = 3
+      ctx.strokeText(String(highlightSeq), x + CELL_SIZE / 2, y + CELL_SIZE / 2)
+      ctx.fillStyle = '#ffffff'
+      ctx.fillText(String(highlightSeq), x + CELL_SIZE / 2, y + CELL_SIZE / 2)
     }
   }
 
