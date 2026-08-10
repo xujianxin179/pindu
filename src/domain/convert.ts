@@ -8,6 +8,19 @@ import type {
   SourceImage,
 } from './types'
 
+/**
+ * 算色 (Color Counting)：统计图案里每个色号各需要多少颗珠子。
+ * 跳过 null 空格；与 colorCounts 的一致性由枚举测试锁定。
+ */
+export function computeColorCounts(pattern: Pattern): Map<ColorId, number> {
+  const counts = new Map<ColorId, number>()
+  for (const id of pattern.cells) {
+    if (id === null) continue
+    counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  return counts
+}
+
 /** 找到 palette 中与 target RGB 欧氏距离最近的色号（最近邻量化）。 */
 function nearestColorId(target: RGB, palette: ColorPalette): ColorId {
   let bestId = palette[0].id
@@ -155,10 +168,7 @@ export function convertImageToPattern(
     .filter((entry) => retained.has(entry.id))
     .map((entry) => entry.id)
 
-  const colorCounts = new Map<ColorId, number>()
-  for (const id of cells) {
-    colorCounts.set(id, (colorCounts.get(id) ?? 0) + 1)
-  }
+  const colorCounts = computeColorCounts(pattern)
 
   return { pattern, activePalette, colorCounts }
 }

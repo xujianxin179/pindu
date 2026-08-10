@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type ChangeEvent } from 'react'
-import { convertImageToPattern } from './domain/convert'
+import { convertImageToPattern, computeColorCounts } from './domain/convert'
 import { MARD_PALETTE } from './domain/palette'
 import type { ColorPalette, Pattern, RGB, SourceImage } from './domain/types'
 
@@ -66,6 +66,36 @@ function PatternCanvas({ pattern, palette }: { pattern: Pattern; palette: ColorP
     }
   }, [pattern, palette])
   return <canvas ref={ref} />
+}
+
+/** 算色清单：按色板顺序列出每个用到的色号 + 颜色样块 + 数量。 */
+function ColorCountsList({ pattern, palette }: { pattern: Pattern; palette: ColorPalette }) {
+  const counts = computeColorCounts(pattern)
+  return (
+    <div>
+      {palette
+        .filter((e) => counts.has(e.id))
+        .map((e) => (
+          <span
+            key={e.id}
+            style={{ display: 'inline-flex', alignItems: 'center', margin: '2px 10px 2px 0' }}
+          >
+            <span
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: 3,
+                border: '1px solid #ccc',
+                background: `rgb(${e.rgb.r},${e.rgb.g},${e.rgb.b})`,
+                marginRight: 4,
+                display: 'inline-block',
+              }}
+            />
+            {e.id} × {counts.get(e.id)}
+          </span>
+        ))}
+    </div>
+  )
 }
 
 function App() {
@@ -135,6 +165,7 @@ function App() {
           <p style={{ color: '#666' }}>
             {pattern.width} × {pattern.height} 格
           </p>
+          <ColorCountsList pattern={pattern} palette={MARD_PALETTE} />
         </div>
       )}
     </div>

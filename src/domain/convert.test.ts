@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { convertImageToPattern } from './convert'
-import type { ColorPalette, SourceImage } from './types'
+import { convertImageToPattern, computeColorCounts } from './convert'
+import type { ColorPalette, Pattern, SourceImage } from './types'
 
 // 用一个独立的小色板做 worked example，expected 值来自手工推理，
 // 不依赖实现逻辑（避免 tautological 测试）。
@@ -166,5 +166,32 @@ describe('convertImageToPattern', () => {
     for (const cell of result.pattern.cells) {
       expect(result.activePalette).toContain(cell)
     }
+  })
+})
+
+describe('computeColorCounts', () => {
+  it('空图案返回空统计', () => {
+    const pattern: Pattern = { width: 0, height: 0, cells: [] }
+    expect(computeColorCounts(pattern)).toEqual(new Map())
+  })
+
+  it('单色图案返回该色计数', () => {
+    const pattern: Pattern = { width: 2, height: 2, cells: ['R', 'R', 'R', 'R'] }
+    expect(computeColorCounts(pattern)).toEqual(new Map([['R', 4]]))
+  })
+
+  it('多色图案按色号统计，跳过 null 空格', () => {
+    const pattern: Pattern = {
+      width: 3,
+      height: 2,
+      cells: ['R', null, 'B', 'R', 'R', 'G'],
+    }
+    expect(computeColorCounts(pattern)).toEqual(
+      new Map([
+        ['R', 3],
+        ['B', 1],
+        ['G', 1],
+      ]),
+    )
   })
 })
