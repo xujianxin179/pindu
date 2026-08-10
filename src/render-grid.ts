@@ -4,6 +4,8 @@
 import type { ColorId, ColorPalette, Pattern } from './domain/types'
 
 export const CELL_SIZE = 12
+/** 粗辅助线颜色：MARD F4 珠红（深色钉板与白纸图纸上都醒目）。 */
+const GUIDE_LINE_COLOR = '#fb2a40'
 
 /**
  * 在 ctx 上绘制网格：每格填色 + 细网格线 + 每 5 格一条粗辅助线。
@@ -56,8 +58,8 @@ export function drawGrid(
     }
   }
 
-  // 粗辅助线（每 5 格一条 + 边框）
-  ctx.strokeStyle = '#333333'
+  // 粗辅助线（每 5 格一条 + 边框，红色）
+  ctx.strokeStyle = GUIDE_LINE_COLOR
   ctx.lineWidth = 1
   ctx.beginPath()
   for (let gx = 0; gx <= pattern.width * CELL_SIZE; gx += CELL_SIZE * 5) {
