@@ -3,27 +3,28 @@
 import { jsPDF } from 'jspdf'
 import { buildSheetLayout } from './domain/sheet'
 import { computeColorCounts } from './domain/convert'
+import { drawGrid, CELL_SIZE } from './render-grid'
 import type { History } from './domain/edit'
 import type { ColorPalette } from './domain/types'
 
-const CELL_SIZE = 12
 const GUIDE_INTERVAL = 5
 /** 图纸下方用色清单的行高。 */
 const LIST_ROW_HEIGHT = 20
 const LIST_MARGIN = 10
 
-/** 把图纸渲染到指定 Canvas。返回该 canvas。 */
+/** 把图纸渲染到指定 Canvas（含辅助线、行列标号与用色清单）。返回该 canvas。 */
 export function renderSheetToCanvas(
   canvas: HTMLCanvasElement,
   history: History,
   palette: ColorPalette,
+  showLabels = true,
 ): HTMLCanvasElement {
   const { pattern, activePalette } = history.present
   const counts = computeColorCounts(pattern, activePalette)
   const layout = buildSheetLayout(pattern.width, pattern.height, {
     cellSize: CELL_SIZE,
     guideInterval: GUIDE_INTERVAL,
-    showLabels: true,
+    showLabels,
     labelGutter: 20,
   })
   const ctx = canvas.getContext('2d')!
@@ -38,48 +39,20 @@ export function renderSheetToCanvas(
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, layout.sheetWidth, layout.sheetHeight + listHeight)
 
-  const colorMap = new Map(palette.map((e) => [e.id, e.rgb]))
+  drawGrid(ctx, pattern, palette, layout.gridX, layout.gridY)
 
-  // 格子
-  for (let i = 0; i < pattern.cells.length; i++) {
-    const x = (i % pattern.width) * CELL_SIZE + layout.gridX
-    const y = Math.floor(i / pattern.width) * CELL_SIZE + layout.gridY
-    const id = pattern.cells[i]
-    const rgb = id ? colorMap.get(id) : null
-    ctx.fillStyle = rgb ? `rgb(${rgb.r},${rgb.g},${rgb.b})` : '#ffffff'
-    ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE)
-    // 细网格线
-    ctx.strokeStyle = '#e0e0e0'
-    ctx.lineWidth = 0.5
-    ctx.strokeRect(x, y, CELL_SIZE, CELL_SIZE)
-  }
-
-  // 粗辅助线（每 5 格一条 + 边框）
-  ctx.strokeStyle = '#333333'
-  ctx.lineWidth = 1
-  ctx.beginPath()
-  for (const vx of layout.vLines) {
-    ctx.moveTo(layout.gridX + vx, layout.gridY)
-    ctx.lineTo(layout.gridX + vx, layout.gridY + layout.gridHeight)
-  }
-  for (const hy of layout.hLines) {
-    ctx.moveTo(layout.gridX, layout.gridY + hy)
-    ctx.lineTo(layout.gridX + layout.gridWidth, layout.gridY + hy)
-  }
-  ctx.stroke()
-
-  // 行列标号
+  // 行列标号：列标在顶部留白区、行标在左侧留白区（各垂直/水平居中），不压格子
   if (layout.colLabels.length) {
     ctx.fillStyle = '#333333'
     ctx.font = '10px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     for (let x = 0; x < pattern.width; x++) {
-      ctx.fillText(layout.colLabels[x], layout.gridX + x * CELL_SIZE + CELL_SIZE / 2, 10)
+      ctx.fillText(layout.colLabels[x], layout.gridX + x * CELL_SIZE + CELL_SIZE / 2, layout.gridY / 2)
     }
     ctx.textAlign = 'right'
     for (let y = 0; y < pattern.height; y++) {
-      ctx.fillText(layout.rowLabels[y], layout.gridX - 5, layout.gridY + y * CELL_SIZE + CELL_SIZE / 2)
+      ctx.fillText(layout.rowLabels[y], layout.gridX / 2, layout.gridY + y * CELL_SIZE + CELL_SIZE / 2)
     }
   }
 
@@ -103,9 +76,14 @@ export function renderSheetToCanvas(
 }
 
 /** 导出图纸为 PNG：渲染到离屏 canvas 后下载。 */
-export function exportSheetPng(history: History, palette: ColorPalette, filename: string) {
+export function exportSheetPng(
+  history: History,
+  palette: ColorPalette,
+  filename: string,
+  showLabels = true,
+) {
   const canvas = document.createElement('canvas')
-  renderSheetToCanvas(canvas, history, palette)
+  renderSheetToCanvas(canvas, history, palette, showLabels)
   canvas.toBlob((blob) => {
     if (!blob) return
     const url = URL.createObjectURL(blob)
@@ -117,11 +95,23 @@ export function exportSheetPng(history: History, palette: ColorPalette, filename
   }, 'image/png')
 }
 
-/** 导出图纸为 PDF：渲染到离屏 canvas，再以图片嵌入 PDF 下载。 */
-export function exportSheetPdf(history: History, palette: ColorPalette, filename: string) {
+/** 导出图纸为 PDF：渲染到离屏 canvas，等比缩放适配一页嵌入 PDF 下载。 */
+export function exportSheetPdf(
+  history: History,
+  palette: ColorPalette,
+  filename: string,
+  showLabels = true,
+) {
   const canvas = document.createElement('canvas')
-  renderSheetToCanvas(canvas, history, palette)
+  renderSheetToCanvas(canvas, history, palette, showLabels)
   const pdf = new jsPDF({ orientation: canvas.width > canvas.height ? 'landscape' : 'portrait' })
-  pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 10, 10, pdf.internal.pageSize.getWidth() - 20, 0)
+  const pageW = pdf.internal.pageSize.getWidth()
+  const pageH = pdf.internal.pageSize.getHeight()
+  const margin = 10
+  // 等比缩放：宽高都适配在页面内（含边距），保证清单不被截断
+  const scale = Math.min((pageW - margin * 2) / canvas.width, (pageH - margin * 2) / canvas.height)
+  const w = canvas.width * scale
+  const h = canvas.height * scale
+  pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pageW - w) / 2, (pageH - h) / 2, w, h)
   pdf.save(filename)
 }

@@ -15,11 +15,11 @@ import {
 } from './domain/edit'
 import type { ColorId, ColorPalette, Pattern, RGB, SourceImage } from './domain/types'
 import { exportSheetPng, exportSheetPdf } from './sheet-export'
+import { drawGrid, CELL_SIZE } from './render-grid'
 
-const CELL_SIZE = 12
+const DEFAULT_LONG_SIDE = 40
 /** 读入图片前先缩到长边不超过此值（px），限制内存峰值。 */
 const MAX_IMAGE_SIDE = 256
-const DEFAULT_LONG_SIDE = 40
 const DEFAULT_MAX_COLORS = 30
 /** 用色数上限不超过色板大小（MARD 221 色）。 */
 const MAX_PALETTE_SIZE = MARD_PALETTE.length
@@ -95,17 +95,7 @@ function PatternCanvas({
     const ctx = canvas.getContext('2d')!
     canvas.width = pattern.width * CELL_SIZE
     canvas.height = pattern.height * CELL_SIZE
-    const colorMap = new Map(palette.map((e) => [e.id, e.rgb]))
-    for (let i = 0; i < pattern.cells.length; i++) {
-      const x = (i % pattern.width) * CELL_SIZE
-      const y = Math.floor(i / pattern.width) * CELL_SIZE
-      const id = pattern.cells[i]
-      const rgb = id ? colorMap.get(id) : null
-      ctx.fillStyle = rgb ? `rgb(${rgb.r},${rgb.g},${rgb.b})` : '#ffffff'
-      ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE)
-      ctx.strokeStyle = '#ddd'
-      ctx.strokeRect(x, y, CELL_SIZE, CELL_SIZE)
-    }
+    drawGrid(ctx, pattern, palette, 0, 0)
   }, [pattern, palette])
 
   /** 事件坐标 -> 网格坐标；越界返回 null。 */
@@ -249,7 +239,8 @@ function ActivePaletteBar({
 }
 
 /** 算色清单：按 Active Palette 顺序列出每个色号 + 颜色样块 + 数量。 */
-function ColorCountsList({ history, palette }: { history: History; palette: ColorPalette }) {  const counts = useMemo(
+function ColorCountsList({ history, palette }: { history: History; palette: ColorPalette }) {
+  const counts = useMemo(
     () => computeColorCounts(history.present.pattern, history.present.activePalette),
     [history],
   )
@@ -290,6 +281,7 @@ function App() {
   const [history, setHistory] = useState<History | null>(null)
   const [tool, setTool] = useState<Tool>('pen')
   const [selectedColor, setSelectedColor] = useState<ColorId>(MARD_PALETTE[0].id)
+  const [showLabels, setShowLabels] = useState(true)
 
   useEffect(() => {
     if (!image) return
@@ -411,10 +403,22 @@ function App() {
             {present.width} × {present.height} 格
           </p>
           <div style={{ marginTop: 4 }}>
-            <button onClick={() => exportSheetPng(history, MARD_PALETTE, 'pindu-sheet.png')}>
+            <label>
+              <input
+                type="checkbox"
+                checked={showLabels}
+                onChange={(e) => setShowLabels(e.target.checked)}
+              />{' '}
+              显示标号
+            </label>{' '}
+            <button
+              onClick={() => exportSheetPng(history, MARD_PALETTE, 'pindu-sheet.png', showLabels)}
+            >
               导出 PNG
             </button>{' '}
-            <button onClick={() => exportSheetPdf(history, MARD_PALETTE, 'pindu-sheet.pdf')}>
+            <button
+              onClick={() => exportSheetPdf(history, MARD_PALETTE, 'pindu-sheet.pdf', showLabels)}
+            >
               导出 PDF
             </button>
           </div>
