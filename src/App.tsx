@@ -162,10 +162,8 @@ function App() {
   const [image, setImage] = useState<SourceImage | null>(null)
   const [longSide, setLongSide] = useState<number | ''>(DEFAULT_LONG_SIDE)
   const [maxColors, setMaxColors] = useState<number | ''>(DEFAULT_MAX_COLORS)
-  const [dithering, setDithering] = useState(false)
   const [removeBackground, setRemoveBackground] = useState(true)
   const [result, setResult] = useState<ConvertResult | null>(null)
-  const [showLabels, setShowLabels] = useState(true)
   const [highlightId, setHighlightId] = useState<ColorId | null>(null)
   const [works, setWorks] = useState<WorkSummary[]>([])
   const [editingWorkId, setEditingWorkId] = useState<string | null>(null)
@@ -187,11 +185,11 @@ function App() {
     const size = computeGridSize(image, longSide)
     const r = convertImageToPattern(
       image,
-      { ...size, maxColors, dithering, removeBackground },
+      { ...size, maxColors, removeBackground },
       MARD_PALETTE,
     )
     setResult(r)
-  }, [image, longSide, maxColors, dithering, removeBackground])
+  }, [image, longSide, maxColors, removeBackground])
 
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -297,26 +295,10 @@ function App() {
         <label className="param-field">
           <input
             type="checkbox"
-            checked={dithering}
-            onChange={(e) => setDithering(e.target.checked)}
-          />
-          抖动
-        </label>
-        <label className="param-field">
-          <input
-            type="checkbox"
             checked={removeBackground}
             onChange={(e) => setRemoveBackground(e.target.checked)}
           />
           去背景
-        </label>
-        <label className="param-field">
-          <input
-            type="checkbox"
-            checked={showLabels}
-            onChange={(e) => setShowLabels(e.target.checked)}
-          />
-          图纸标号
         </label>
       </div>
 
@@ -343,17 +325,13 @@ function App() {
           <div className="sheet-actions">
             <button
               className="btn"
-              onClick={() =>
-                exportSheetPng(result, MARD_PALETTE, 'pindu-sheet.png', showLabels, highlightId)
-              }
+              onClick={() => exportSheetPng(result, MARD_PALETTE, 'pindu-sheet.png', highlightId)}
             >
               导出图纸 PNG
             </button>
             <button
               className="btn"
-              onClick={() =>
-                exportSheetPdf(result, MARD_PALETTE, 'pindu-sheet.pdf', showLabels, highlightId)
-              }
+              onClick={() => exportSheetPdf(result, MARD_PALETTE, 'pindu-sheet.pdf', highlightId)}
             >
               导出图纸 PDF
             </button>
@@ -366,7 +344,6 @@ function App() {
                   result,
                   MARD_PALETTE,
                   `pindu-sheet.${e.target.value}`,
-                  showLabels,
                   e.target.value as 'png' | 'pdf',
                   highlightId,
                 )

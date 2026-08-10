@@ -35,7 +35,6 @@ export interface ConvertParams {
   width: number
   height: number
   maxColors?: number
-  dithering?: boolean
   /** 自动去掉背景色（边缘主色检测，接近的格子变空格）。 */
   removeBackground?: boolean
 }

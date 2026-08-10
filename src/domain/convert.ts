@@ -94,51 +94,6 @@ function selectRetained(
   return new Set(sorted.slice(0, maxColors).map(([id]) => id))
 }
 
-/** 抖动 + 量化：Floyd-Steinberg 误差扩散。 */
-function ditherAndQuantize(sampled: RGB[], width: number, height: number, palette: ColorPalette): ColorId[] {
-  const total = width * height
-  const err = new Array<RGB>(total)
-  for (let i = 0; i < total; i++) err[i] = { r: 0, g: 0, b: 0 }
-  const cells: ColorId[] = []
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = y * width + x
-      const base = sampled[idx]
-      const candidate = {
-        r: base.r + Math.round(err[idx].r),
-        g: base.g + Math.round(err[idx].g),
-        b: base.b + Math.round(err[idx].b),
-      }
-      const id = nearestColorId(candidate, palette)
-      cells.push(id)
-      const chosen = palette.find((e) => e.id === id)!.rgb
-      const diff = {
-        r: candidate.r - chosen.r,
-        g: candidate.g - chosen.g,
-        b: candidate.b - chosen.b,
-      }
-      const right = idx + 1
-      const down = idx + width
-      const downLeft = idx + width - 1
-      const downRight = idx + width + 1
-      const add = (target: number, f: number) => {
-        if (target >= 0 && target < total) {
-          err[target].r += (diff.r * f) / 16
-          err[target].g += (diff.g * f) / 16
-          err[target].b += (diff.b * f) / 16
-        }
-      }
-      if (x + 1 < width) add(right, 7)
-      if (y + 1 < height) {
-        if (x > 0) add(downLeft, 3)
-        add(down, 5)
-        if (x + 1 < width) add(downRight, 1)
-      }
-    }
-  }
-  return cells
-}
-
 /**
  * 检测背景色：取图片边缘一圈像素中"第一个出现次数最多"的颜色（背景通常在边缘，主体居中）。
  * 极小图（<2 像素宽或高）退化为一整圈采样，仍返回一个色。
@@ -173,7 +128,6 @@ export function dominantEdgeColor(image: SourceImage): RGB {
 /**
  * 图片转图案（核心转换管线）。
  * maxColors：先按"覆盖最多"选出用色子集（Active Palette），再在子集上量化；
- * dithering：默认关，开启时在（受限的）子集上用 Floyd-Steinberg 误差扩散；
  * removeBackground：默认开，检测边缘主色为背景色，与之接近的格子变空格（null）。
  */
 export function convertImageToPattern(
@@ -181,7 +135,7 @@ export function convertImageToPattern(
   params: ConvertParams,
   palette: ColorPalette,
 ): ConvertResult {
-  const { width, height, maxColors, dithering = false, removeBackground = true } = params
+  const { width, height, maxColors, removeBackground = true } = params
   const sampled = resample(image, width, height)
   const bg = removeBackground ? dominantEdgeColor(image) : null
 
@@ -202,23 +156,11 @@ export function convertImageToPattern(
       .filter((id): id is ColorId => id !== null)
     retained = selectRetained(initial, maxColors, palette)
     const subsetPalette = palette.filter((e) => retained.has(e.id))
-    if (dithering) {
-      cells = ditherAndQuantize(sampled, width, height, subsetPalette).map((id, i) =>
-        backgroundMask?.[i] ? null : id,
-      )
-    } else {
-      cells = sampled.map((rgb, i) =>
-        backgroundMask?.[i] ? null : nearestColorId(rgb, subsetPalette),
-      )
-    }
+    cells = sampled.map((rgb, i) =>
+      backgroundMask?.[i] ? null : nearestColorId(rgb, subsetPalette),
+    )
   } else {
-    if (dithering) {
-      cells = ditherAndQuantize(sampled, width, height, palette).map((id, i) =>
-        backgroundMask?.[i] ? null : id,
-      )
-    } else {
-      cells = sampled.map((rgb, i) => (backgroundMask?.[i] ? null : nearestColorId(rgb, palette)))
-    }
+    cells = sampled.map((rgb, i) => (backgroundMask?.[i] ? null : nearestColorId(rgb, palette)))
     retained = new Set(cells)
   }
 

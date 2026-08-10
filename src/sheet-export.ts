@@ -16,7 +16,6 @@ export function renderSheetToCanvas(
   canvas: HTMLCanvasElement,
   result: ConvertResult,
   palette: ColorPalette,
-  showLabels = true,
   highlightId: ColorId | null = null,
 ): HTMLCanvasElement {
   const { pattern, activePalette } = result
@@ -24,7 +23,7 @@ export function renderSheetToCanvas(
   const layout = buildSheetLayout(pattern.width, pattern.height, {
     cellSize: CELL_SIZE,
     guideInterval: GUIDE_INTERVAL,
-    showLabels,
+    showLabels: true,
     labelGutter: 20,
   })
   const ctx = canvas.getContext('2d')!
@@ -90,11 +89,10 @@ export function exportSheetPng(
   result: ConvertResult,
   palette: ColorPalette,
   filename: string,
-  showLabels = true,
   highlightId: ColorId | null = null,
 ) {
   const canvas = document.createElement('canvas')
-  renderSheetToCanvas(canvas, result, palette, showLabels, highlightId)
+  renderSheetToCanvas(canvas, result, palette, highlightId)
   canvas.toBlob((blob) => {
     if (!blob) return
     downloadBlob(blob, filename)
@@ -105,11 +103,10 @@ export function exportSheetPng(
 function buildSheetPdf(
   result: ConvertResult,
   palette: ColorPalette,
-  showLabels: boolean,
   highlightId: ColorId | null,
 ): jsPDF {
   const canvas = document.createElement('canvas')
-  renderSheetToCanvas(canvas, result, palette, showLabels, highlightId)
+  renderSheetToCanvas(canvas, result, palette, highlightId)
   const pdf = new jsPDF({ orientation: canvas.width > canvas.height ? 'landscape' : 'portrait' })
   const pageW = pdf.internal.pageSize.getWidth()
   const pageH = pdf.internal.pageSize.getHeight()
@@ -127,10 +124,9 @@ export function exportSheetPdf(
   result: ConvertResult,
   palette: ColorPalette,
   filename: string,
-  showLabels = true,
   highlightId: ColorId | null = null,
 ) {
-  buildSheetPdf(result, palette, showLabels, highlightId).save(filename)
+  buildSheetPdf(result, palette, highlightId).save(filename)
 }
 
 /** 分享图纸（PNG/PDF）：优先 Web Share API，不支持时降级为下载。与导出共用 renderSheetToCanvas。 */
@@ -138,16 +134,15 @@ export async function shareSheet(
   result: ConvertResult,
   palette: ColorPalette,
   filename: string,
-  showLabels = true,
   format: 'png' | 'pdf' = 'png',
   highlightId: ColorId | null = null,
 ): Promise<void> {
   let blob: Blob
   if (format === 'pdf') {
-    blob = buildSheetPdf(result, palette, showLabels, highlightId).output('blob')
+    blob = buildSheetPdf(result, palette, highlightId).output('blob')
   } else {
     const canvas = document.createElement('canvas')
-    renderSheetToCanvas(canvas, result, palette, showLabels, highlightId)
+    renderSheetToCanvas(canvas, result, palette, highlightId)
     const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
     if (!pngBlob) return
     blob = pngBlob
