@@ -71,11 +71,10 @@ function computeGridSize(image: SourceImage, longSide: number) {
 }
 
 /** 色号 -> 珠色 CSS。 */
-function beadStyle(id: ColorId, palette: ColorPalette, extra?: React.CSSProperties): React.CSSProperties {
+function beadStyle(id: ColorId, palette: ColorPalette): React.CSSProperties {
   const entry = palette.find((e) => e.id === id)
   return {
     background: entry ? `rgb(${entry.rgb.r},${entry.rgb.g},${entry.rgb.b})` : 'var(--panel)',
-    ...extra,
   }
 }
 
@@ -406,7 +405,15 @@ function App() {
         <span className="brand">pinDu</span>
         <span className="brand-sub">MARD 221</span>
         <span className="header-spacer" />
-        <input type="file" accept="image/*" onChange={onFile} id="file-input" hidden />
+        {/* 用 opacity+absolute 而非 hidden：个别旧版 iPad Safari 对 display:none 的
+            file input 触发 label 可能不弹选择器 */}
+        <input
+          type="file"
+          accept="image/*"
+          onChange={onFile}
+          id="file-input"
+          style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}
+        />
         <label htmlFor="file-input" className="btn btn-primary" style={{ cursor: 'pointer' }}>
           导入图片
         </label>

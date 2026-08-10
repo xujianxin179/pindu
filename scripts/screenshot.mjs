@@ -13,11 +13,6 @@ await new Promise((r) => setTimeout(r, 2500))
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 } })
 
-// 注入一个示例图案：在页面加载后构造 history
-await page.addInitScript(() => {
-  window.__seedPattern = true
-})
-
 try {
   await page.goto('http://localhost:5199', { waitUntil: 'networkidle' })
 

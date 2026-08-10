@@ -5,10 +5,10 @@
 :root {
   /* MARD 色号驱动的 UI 色板 */
   --board: #2c2c2c; /* H6 钉板底 */
-  --panel: #3a3a3c; /* 面板（略亮于板） */
+  --panel: #3a3a3c; /* 界面中性色（非 MARD 色号）：面板，略亮于板 */
   --ink: #fbfbfb; /* H2 主文字 */
   --ink-dim: #b4b4b4; /* H3 次文字 */
-  --line: #55565a; /* 分隔线 */
+  --line: #55565a; /* 界面中性色（非 MARD 色号）：分隔线 */
   --accent: #f0d83a; /* A5 珠黄：主动作 */
   --accent-ink: #2c2c2c; /* 黄底上的深字 */
   --blue: #3554af; /* D3 珠蓝：信息/选中 */
