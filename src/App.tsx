@@ -14,6 +14,7 @@ import {
   type History,
 } from './domain/edit'
 import type { ColorId, ColorPalette, Pattern, RGB, SourceImage } from './domain/types'
+import { exportSheetPng, exportSheetPdf } from './sheet-export'
 
 const CELL_SIZE = 12
 /** 读入图片前先缩到长边不超过此值（px），限制内存峰值。 */
@@ -248,8 +249,7 @@ function ActivePaletteBar({
 }
 
 /** 算色清单：按 Active Palette 顺序列出每个色号 + 颜色样块 + 数量。 */
-function ColorCountsList({ history, palette }: { history: History; palette: ColorPalette }) {
-  const counts = useMemo(
+function ColorCountsList({ history, palette }: { history: History; palette: ColorPalette }) {  const counts = useMemo(
     () => computeColorCounts(history.present.pattern, history.present.activePalette),
     [history],
   )
@@ -410,6 +410,14 @@ function App() {
           <p style={{ color: '#666' }}>
             {present.width} × {present.height} 格
           </p>
+          <div style={{ marginTop: 4 }}>
+            <button onClick={() => exportSheetPng(history, MARD_PALETTE, 'pindu-sheet.png')}>
+              导出 PNG
+            </button>{' '}
+            <button onClick={() => exportSheetPdf(history, MARD_PALETTE, 'pindu-sheet.pdf')}>
+              导出 PDF
+            </button>
+          </div>
           <ColorCountsList history={history} palette={MARD_PALETTE} />
         </div>
       )}
