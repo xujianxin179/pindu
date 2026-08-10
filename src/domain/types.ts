@@ -1,0 +1,55 @@
+// 领域类型，对齐 CONTEXT.md 中的 glossary。
+
+/** 色号：色板中某一种颜色的唯一标识（如 MARD 色号）。 */
+export type ColorId = string
+
+/** RGB 颜色值，0-255。 */
+export interface RGB {
+  r: number
+  g: number
+  b: number
+}
+
+/** 色板中的一项：色号 + 名称 + RGB。 */
+export interface ColorEntry {
+  id: ColorId
+  name: string
+  rgb: RGB
+}
+
+/** 色板 (ColorPalette)：一组带色号的珠子颜色，量化和算色的基准。 */
+export type ColorPalette = ColorEntry[]
+
+/** 图案中的一格：一个色号，或空格（null）。 */
+export type Cell = ColorId | null
+
+/** 图案 (Pattern)：像素网格，每格对应一颗珠子的颜色。 */
+export interface Pattern {
+  width: number
+  height: number
+  cells: Cell[] // row-major，长度 = width * height
+}
+
+/** 图片转图案的参数。ticket 01 仅使用 width/height，maxColors/dithering 留给 ticket 02。 */
+export interface ConvertParams {
+  width: number
+  height: number
+  maxColors?: number
+  dithering?: boolean
+}
+
+/** 待转换的源图片：宽高 + 像素 RGB 数组（row-major）。 */
+export interface SourceImage {
+  width: number
+  height: number
+  pixels: RGB[] // 长度 = width * height
+}
+
+/** 图片转图案的结果。 */
+export interface ConvertResult {
+  pattern: Pattern
+  /** 用色集 (Active Palette)：实际用到的色号子集，按色板顺序。 */
+  activePalette: ColorId[]
+  /** 算色 (Color Counting)：每个色号的出现次数。 */
+  colorCounts: Map<ColorId, number>
+}
