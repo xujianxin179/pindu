@@ -16,6 +16,8 @@ import {
 import type { ColorId, ColorPalette, Pattern, RGB, SourceImage } from './domain/types'
 import { exportSheetPng, exportSheetPdf, shareSheet } from './sheet-export'
 import { drawGrid, CELL_SIZE } from './render-grid'
+import { IdbWorkStore } from './idb-work-store'
+import type { Work, WorkStore, WorkSummary } from './domain/work'
 
 const DEFAULT_LONG_SIDE = 40
 /** 读入图片前先缩到长边不超过此值（px），限制内存峰值。 */
@@ -273,6 +275,52 @@ function ColorCountsList({ history, palette }: { history: History; palette: Colo
   )
 }
 
+/** 作品库面板：列出作品（缩略图+名称+时间），支持打开/重命名/删除。 */
+function WorkspacePanel({
+  works,
+  onOpen,
+  onRename,
+  onDelete,
+}: {
+  works: WorkSummary[]
+  onOpen: (id: string) => void
+  onRename: (id: string) => void
+  onDelete: (id: string) => void
+}) {
+  return (
+    <div style={{ marginTop: 12 }}>
+      <h3 style={{ margin: '8px 0' }}>作品库</h3>
+      {works.length === 0 ? (
+        <p style={{ color: '#999' }}>暂无作品</p>
+      ) : (
+        works.map((w) => (
+          <div
+            key={w.id}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '4px 0',
+              borderBottom: '1px solid #eee',
+            }}
+          >
+            {w.thumbnail ? (
+              <img src={w.thumbnail} alt="" style={{ width: 24, height: 24, objectFit: 'cover' }} />
+            ) : (
+              <span style={{ width: 24, height: 24, background: '#eee', display: 'inline-block' }} />
+            )}
+            <button onClick={() => onOpen(w.id)} style={{ flex: 1, textAlign: 'left' }}>
+              {w.name}
+            </button>
+            <button onClick={() => onRename(w.id)}>重命名</button>
+            <button onClick={() => onDelete(w.id)}>删除</button>
+          </div>
+        ))
+      )}
+    </div>
+  )
+}
+
 function App() {
   const [image, setImage] = useState<SourceImage | null>(null)
   const [longSide, setLongSide] = useState(DEFAULT_LONG_SIDE)
@@ -282,6 +330,20 @@ function App() {
   const [tool, setTool] = useState<Tool>('pen')
   const [selectedColor, setSelectedColor] = useState<ColorId>(MARD_PALETTE[0].id)
   const [showLabels, setShowLabels] = useState(true)
+  const [works, setWorks] = useState<WorkSummary[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [saveName, setSaveName] = useState('')
+  const storeRef = useRef<WorkStore | null>(null)
+  if (!storeRef.current) storeRef.current = new IdbWorkStore()
+
+  useEffect(() => {
+    storeRef.current!.list().then(setWorks)
+  }, [])
+
+  async function refreshWorks() {
+    setWorks(await storeRef.current!.list())
+  }
 
   useEffect(() => {
     if (!image) return
@@ -313,6 +375,46 @@ function App() {
     if (!file) return
     const img = await fileToSourceImage(file)
     setImage(img)
+  }
+
+  /** 保存当前图案为作品：写入作品库。 */
+  async function onSaveWork(name: string) {
+    if (!history || !name.trim()) return
+    const work: Work = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      pattern: history.present.pattern,
+      activePalette: history.present.activePalette,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }
+    await storeRef.current!.save(work)
+    await refreshWorks()
+  }
+
+  /** 打开作品：恢复 pattern 与用色集。 */
+  async function onOpenWork(id: string) {
+    const work = await storeRef.current!.get(id)
+    if (!work) return
+    setHistory(
+      createHistory({ pattern: work.pattern, activePalette: work.activePalette }),
+    )
+    setSelectedColor(work.activePalette[0] ?? MARD_PALETTE[0].id)
+    setImage(null)
+  }
+
+  async function onRenameWork(id: string) {
+    if (!renameValue.trim()) return
+    const work = await storeRef.current!.get(id)
+    if (!work) return
+    await storeRef.current!.save({ ...work, name: renameValue.trim(), updatedAt: Date.now() })
+    setEditingId(null)
+    await refreshWorks()
+  }
+
+  async function onDeleteWork(id: string) {
+    await storeRef.current!.remove(id)
+    await refreshWorks()
   }
 
   const present = history?.present.pattern ?? null
@@ -431,6 +533,32 @@ function App() {
               <option value="pdf">分享 PDF</option>
             </select>
           </div>
+          <div style={{ marginTop: 4 }}>
+            <input
+              placeholder="作品名称"
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              style={{ marginRight: 4 }}
+            />
+            <button onClick={() => onSaveWork(saveName)}>保存作品</button>
+          </div>
+          <WorkspacePanel
+            works={works}
+            onOpen={onOpenWork}
+            onRename={(id) => {
+              setEditingId(id)
+              const w = works.find((x) => x.id === id)
+              setRenameValue(w?.name ?? '')
+            }}
+            onDelete={onDeleteWork}
+          />
+          {editingId && (
+            <div style={{ marginTop: 4 }}>
+              <input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
+              <button onClick={() => onRenameWork(editingId)}>确认</button>
+              <button onClick={() => setEditingId(null)}>取消</button>
+            </div>
+          )}
           <ColorCountsList history={history} palette={MARD_PALETTE} />
         </div>
       )}
