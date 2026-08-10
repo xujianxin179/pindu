@@ -1,15 +1,15 @@
 import { useState, useRef, useEffect, type ChangeEvent } from 'react'
 import { convertImageToPattern } from './domain/convert'
-import { PLACEHOLDER_PALETTE } from './domain/palette'
+import { MARD_PALETTE } from './domain/palette'
 import type { ColorPalette, Pattern, RGB, SourceImage } from './domain/types'
 
 const CELL_SIZE = 12
 /** 读入图片前先缩到长边不超过此值（px），限制内存峰值。 */
 const MAX_IMAGE_SIDE = 256
 const DEFAULT_LONG_SIDE = 40
-const DEFAULT_MAX_COLORS = 8
-/** 用色数上限不超过色板大小（ticket 03 换 MARD 221 色后自动变大）。 */
-const MAX_PALETTE_SIZE = PLACEHOLDER_PALETTE.length
+const DEFAULT_MAX_COLORS = 30
+/** 用色数上限不超过色板大小（MARD 221 色）。 */
+const MAX_PALETTE_SIZE = MARD_PALETTE.length
 
 /**
  * 把用户选择的图片文件读成 SourceImage（用 Canvas 读像素 RGB）。
@@ -81,7 +81,7 @@ function App() {
     const result = convertImageToPattern(
       image,
       { ...size, maxColors, dithering },
-      PLACEHOLDER_PALETTE,
+      MARD_PALETTE,
     )
     setPattern(result.pattern)
   }, [image, longSide, maxColors, dithering])
@@ -131,7 +131,7 @@ function App() {
       )}
       {pattern && (
         <div style={{ marginTop: 16 }}>
-          <PatternCanvas pattern={pattern} palette={PLACEHOLDER_PALETTE} />
+          <PatternCanvas pattern={pattern} palette={MARD_PALETTE} />
           <p style={{ color: '#666' }}>
             {pattern.width} × {pattern.height} 格
           </p>
