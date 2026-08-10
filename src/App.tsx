@@ -160,8 +160,8 @@ function WorkspacePanel({
 
 function App() {
   const [image, setImage] = useState<SourceImage | null>(null)
-  const [longSide, setLongSide] = useState(DEFAULT_LONG_SIDE)
-  const [maxColors, setMaxColors] = useState(DEFAULT_MAX_COLORS)
+  const [longSide, setLongSide] = useState<number | ''>(DEFAULT_LONG_SIDE)
+  const [maxColors, setMaxColors] = useState<number | ''>(DEFAULT_MAX_COLORS)
   const [dithering, setDithering] = useState(false)
   const [removeBackground, setRemoveBackground] = useState(true)
   const [result, setResult] = useState<ConvertResult | null>(null)
@@ -183,7 +183,7 @@ function App() {
   }
 
   useEffect(() => {
-    if (!image) return
+    if (!image || longSide === '' || maxColors === '') return
     const size = computeGridSize(image, longSide)
     const r = convertImageToPattern(
       image,
@@ -279,7 +279,8 @@ function App() {
             min={1}
             max={200}
             value={longSide}
-            onChange={(e) => setLongSide(Math.max(1, Number(e.target.value)))}
+            placeholder="40"
+            onChange={(e) => setLongSide(e.target.value === '' ? '' : Number(e.target.value))}
           />
         </label>
         <label className="param-field">
@@ -289,7 +290,8 @@ function App() {
             min={1}
             max={MAX_PALETTE_SIZE}
             value={maxColors}
-            onChange={(e) => setMaxColors(Math.max(1, Number(e.target.value)))}
+            placeholder="30"
+            onChange={(e) => setMaxColors(e.target.value === '' ? '' : Number(e.target.value))}
           />
         </label>
         <label className="param-field">
