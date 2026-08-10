@@ -18,10 +18,11 @@ import { exportSheetPng, exportSheetPdf, shareSheet } from './sheet-export'
 import { drawGrid, CELL_SIZE } from './render-grid'
 import { IdbWorkStore } from './idb-work-store'
 import type { Work, WorkStore, WorkSummary } from './domain/work'
+import './index.css'
+import './App.css'
 
-const DEFAULT_LONG_SIDE = 40
-/** 读入图片前先缩到长边不超过此值（px），限制内存峰值。 */
 const MAX_IMAGE_SIDE = 256
+const DEFAULT_LONG_SIDE = 40
 const DEFAULT_MAX_COLORS = 30
 /** 用色数上限不超过色板大小（MARD 221 色）。 */
 const MAX_PALETTE_SIZE = MARD_PALETTE.length
@@ -67,6 +68,15 @@ function computeGridSize(image: SourceImage, longSide: number) {
   const height = longSide
   const width = Math.max(1, Math.round((image.width / image.height) * longSide))
   return { width, height }
+}
+
+/** 色号 -> 珠色 CSS。 */
+function beadStyle(id: ColorId, palette: ColorPalette, extra?: React.CSSProperties): React.CSSProperties {
+  const entry = palette.find((e) => e.id === id)
+  return {
+    background: entry ? `rgb(${entry.rgb.r},${entry.rgb.g},${entry.rgb.b})` : 'var(--panel)',
+    ...extra,
+  }
 }
 
 function PatternCanvas({
@@ -183,55 +193,33 @@ function ActivePaletteBar({
   const [showAll, setShowAll] = useState(false)
   const unselected = palette.filter((e) => !activePalette.includes(e.id))
   return (
-    <div style={{ marginTop: 8 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-        {activePalette.map((id) => {
-          const entry = palette.find((e) => e.id === id)!
-          const isSelected = id === selectedColor
-          return (
-            <button
-              key={id}
-              onClick={() => onSelect(id)}
-              title={id}
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: 4,
-                border: isSelected ? '2px solid #333' : '1px solid #ccc',
-                background: `rgb(${entry.rgb.r},${entry.rgb.g},${entry.rgb.b})`,
-                padding: 0,
-                cursor: 'pointer',
-              }}
-            />
-          )
-        })}
-        <button
-          onClick={() => setShowAll((v) => !v)}
-          title="从全色板选色"
-          style={{ width: 20, height: 20, borderRadius: 4, border: '1px dashed #999', cursor: 'pointer' }}
-        >
+    <div className="palette-bar">
+      <div className="palette-row">
+        {activePalette.map((id) => (
+          <button
+            key={id}
+            className={`bead${id === selectedColor ? ' selected' : ''}`}
+            onClick={() => onSelect(id)}
+            title={id}
+            style={beadStyle(id, palette)}
+          />
+        ))}
+        <button className="bead-more" onClick={() => setShowAll((v) => !v)} title="从全色板选色">
           ＋
         </button>
       </div>
       {showAll && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6, borderTop: '1px solid #eee', paddingTop: 6 }}>
+        <div className="palette-all">
           {unselected.map((entry) => (
             <button
               key={entry.id}
+              className="bead"
               onClick={() => {
                 onExtend(entry.id)
                 setShowAll(false)
               }}
               title={entry.id}
-              style={{
-                width: 16,
-                height: 16,
-                borderRadius: 3,
-                border: '1px solid #ccc',
-                background: `rgb(${entry.rgb.r},${entry.rgb.g},${entry.rgb.b})`,
-                padding: 0,
-                cursor: 'pointer',
-              }}
+              style={beadStyle(entry.id, palette)}
             />
           ))}
         </div>
@@ -247,30 +235,15 @@ function ColorCountsList({ history, palette }: { history: History; palette: Colo
     [history],
   )
   return (
-    <div>
-      {history.present.activePalette.map((id) => {
-        const entry = palette.find((e) => e.id === id)!
-        const count = counts.get(id) ?? 0
-        return (
-          <span
-            key={id}
-            style={{ display: 'inline-flex', alignItems: 'center', margin: '2px 10px 2px 0' }}
-          >
-            <span
-              style={{
-                width: 14,
-                height: 14,
-                borderRadius: 3,
-                border: '1px solid #ccc',
-                background: `rgb(${entry.rgb.r},${entry.rgb.g},${entry.rgb.b})`,
-                marginRight: 4,
-                display: 'inline-block',
-              }}
-            />
-            {id} × {count}
-          </span>
-        )
-      })}
+    <div className="counts">
+      <span className="counts-label">算色</span>
+      {history.present.activePalette.map((id) => (
+        <span key={id} className="count-chip">
+          <span className="bead" style={beadStyle(id, palette)} />
+          <span className="count-id">{id}</span>
+          <span className="count-num">× {counts.get(id) ?? 0}</span>
+        </span>
+      ))}
     </div>
   )
 }
@@ -288,32 +261,27 @@ function WorkspacePanel({
   onDelete: (id: string) => void
 }) {
   return (
-    <div style={{ marginTop: 12 }}>
-      <h3 style={{ margin: '8px 0' }}>作品库</h3>
+    <div className="workspace">
+      <h3>作品库</h3>
       {works.length === 0 ? (
-        <p style={{ color: '#999' }}>暂无作品</p>
+        <p className="empty">还没有作品。导入图片转好图案后，点"保存作品"存到这里。</p>
       ) : (
         works.map((w) => (
-          <div
-            key={w.id}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '4px 0',
-              borderBottom: '1px solid #eee',
-            }}
-          >
+          <div key={w.id} className="work-row">
             {w.sourceThumbnail ? (
-              <img src={w.sourceThumbnail} alt="" style={{ width: 24, height: 24, objectFit: 'cover' }} />
+              <img src={w.sourceThumbnail} alt="" className="work-thumb" />
             ) : (
-              <span style={{ width: 24, height: 24, background: '#eee', display: 'inline-block' }} />
+              <span className="work-thumb" />
             )}
-            <button onClick={() => onOpen(w.id)} style={{ flex: 1, textAlign: 'left' }}>
+            <button className="work-open" onClick={() => onOpen(w.id)}>
               {w.name}
             </button>
-            <button onClick={() => onRename(w.id)}>重命名</button>
-            <button onClick={() => onDelete(w.id)}>删除</button>
+            <button className="btn" onClick={() => onRename(w.id)}>
+              重命名
+            </button>
+            <button className="btn" onClick={() => onDelete(w.id)}>
+              删除
+            </button>
           </div>
         ))
       )}
@@ -378,13 +346,13 @@ function App() {
   }
 
   /** 保存当前图案为作品：续编（editingWorkId）时更新原作品，否则新建。 */
-  async function onSaveWork(name: string) {
-    if (!history || !name.trim()) return
+  async function onSaveWork() {
+    if (!history || !saveName.trim()) return
     const now = Date.now()
     const existing = editingWorkId ? await storeRef.current!.get(editingWorkId) : null
     const work: Work = {
       id: existing?.id ?? crypto.randomUUID(),
-      name: name.trim(),
+      name: saveName.trim(),
       pattern: history.present.pattern,
       activePalette: history.present.activePalette,
       createdAt: existing?.createdAt ?? now,
@@ -427,12 +395,26 @@ function App() {
   const present = history?.present.pattern ?? null
 
   return (
-    <div style={{ padding: 16 }}>
-      <h1>pinDu 拼豆</h1>
-      <input type="file" accept="image/*" onChange={onFile} />
-      <div style={{ marginTop: 12 }}>
-        <label>
-          长边珠数{' '}
+    <div>
+      <header className="app-header">
+        <span className="logo">
+          <span className="bead" style={beadStyle('F5', MARD_PALETTE)} />
+          <span className="bead" style={beadStyle('B8', MARD_PALETTE)} />
+          <span className="bead" style={beadStyle('D3', MARD_PALETTE)} />
+          <span className="bead" style={beadStyle('A5', MARD_PALETTE)} />
+        </span>
+        <span className="brand">pinDu</span>
+        <span className="brand-sub">MARD 221</span>
+        <span className="header-spacer" />
+        <input type="file" accept="image/*" onChange={onFile} id="file-input" hidden />
+        <label htmlFor="file-input" className="btn btn-primary" style={{ cursor: 'pointer' }}>
+          导入图片
+        </label>
+      </header>
+
+      <div className="params">
+        <label className="param-field">
+          长边珠数
           <input
             type="number"
             min={1}
@@ -440,9 +422,9 @@ function App() {
             value={longSide}
             onChange={(e) => setLongSide(Math.max(1, Number(e.target.value)))}
           />
-        </label>{' '}
-        <label>
-          用色数{' '}
+        </label>
+        <label className="param-field">
+          用色数
           <input
             type="number"
             min={1}
@@ -450,31 +432,45 @@ function App() {
             value={maxColors}
             onChange={(e) => setMaxColors(Math.max(1, Number(e.target.value)))}
           />
-        </label>{' '}
-        <label>
+        </label>
+        <label className="param-field">
           <input
             type="checkbox"
             checked={dithering}
             onChange={(e) => setDithering(e.target.checked)}
-          />{' '}
+          />
           抖动
         </label>
+        <label className="param-field">
+          <input
+            type="checkbox"
+            checked={showLabels}
+            onChange={(e) => setShowLabels(e.target.checked)}
+          />
+          图纸标号
+        </label>
       </div>
+
       {history && (
-        <div style={{ marginTop: 12 }}>
+        <div className="toolbar">
           {TOOLS.map((t) => (
-            <button key={t.id} onClick={() => setTool(t.id)} disabled={tool === t.id}>
+            <button
+              key={t.id}
+              className={`tool-btn${tool === t.id ? ' active' : ''}`}
+              onClick={() => setTool(t.id)}
+            >
               {t.label}
             </button>
-          ))}{' '}
-          <button onClick={onUndo} disabled={!history || undo(history) === null}>
+          ))}
+          <button className="tool-btn" onClick={onUndo} disabled={!history || undo(history) === null}>
             撤销
-          </button>{' '}
-          <button onClick={onRedo} disabled={!history || redo(history) === null}>
+          </button>
+          <button className="tool-btn" onClick={onRedo} disabled={!history || redo(history) === null}>
             重做
           </button>
         </div>
       )}
+
       {history && (
         <ActivePaletteBar
           activePalette={history.present.activePalette}
@@ -492,78 +488,96 @@ function App() {
           }}
         />
       )}
+
       {history && present && (
-        <div style={{ marginTop: 8 }}>
-          <PatternCanvas
-            pattern={present}
-            palette={MARD_PALETTE}
-            tool={tool}
-            onPaint={(x, y) => commitEdit((p) => setCell(p, x, y, selectedColor))}
-            onErase={(x, y) => commitEdit((p) => eraseCell(p, x, y))}
-            onFill={(x0, y0, x1, y1) => commitEdit((p) => fillRect(p, { x0, y0, x1, y1 }, selectedColor))}
-            onPick={(x, y) => {
-              const id = colorAt(present, x, y)
-              if (id) setSelectedColor(id)
-            }}
-          />
-          <p style={{ color: '#666' }}>
-            {present.width} × {present.height} 格
-          </p>
-          <div style={{ marginTop: 4 }}>
-            <label>
-              <input
-                type="checkbox"
-                checked={showLabels}
-                onChange={(e) => setShowLabels(e.target.checked)}
-              />{' '}
-              显示标号
-            </label>{' '}
+        <>
+          <div className="canvas-wrap">
+            <PatternCanvas
+              pattern={present}
+              palette={MARD_PALETTE}
+              tool={tool}
+              onPaint={(x, y) => commitEdit((p) => setCell(p, x, y, selectedColor))}
+              onErase={(x, y) => commitEdit((p) => eraseCell(p, x, y))}
+              onFill={(x0, y0, x1, y1) => commitEdit((p) => fillRect(p, { x0, y0, x1, y1 }, selectedColor))}
+              onPick={(x, y) => {
+                const id = colorAt(present, x, y)
+                if (id) setSelectedColor(id)
+              }}
+            />
+            <p className="grid-meta">
+              {present.width} × {present.height} 格
+            </p>
+          </div>
+
+          <ColorCountsList history={history} palette={MARD_PALETTE} />
+
+          <div className="sheet-actions">
             <button
+              className="btn"
               onClick={() => exportSheetPng(history, MARD_PALETTE, 'pindu-sheet.png', showLabels)}
             >
-              导出 PNG
-            </button>{' '}
+              导出图纸 PNG
+            </button>
             <button
+              className="btn"
               onClick={() => exportSheetPdf(history, MARD_PALETTE, 'pindu-sheet.pdf', showLabels)}
             >
-              导出 PDF
-            </button>{' '}
+              导出图纸 PDF
+            </button>
             <select
+              className="btn"
               defaultValue="png"
+              style={{ background: 'var(--panel)', color: 'var(--ink)' }}
               onChange={(e) =>
                 shareSheet(history, MARD_PALETTE, `pindu-sheet.${e.target.value}`, showLabels, e.target.value as 'png' | 'pdf')
               }
             >
-              <option value="png">分享 PNG</option>
-              <option value="pdf">分享 PDF</option>
+              <option value="png">分享图纸 PNG</option>
+              <option value="pdf">分享图纸 PDF</option>
             </select>
           </div>
-          <div style={{ marginTop: 4 }}>
+
+          <div className="save-row">
             <input
-              placeholder="作品名称"
+              placeholder="作品名称，例如：星空小猫"
               value={saveName}
               onChange={(e) => setSaveName(e.target.value)}
-              style={{ marginRight: 4 }}
             />
-            <button onClick={() => onSaveWork(saveName)}>保存作品</button>
+            <button className="btn btn-primary" onClick={onSaveWork}>
+              保存作品
+            </button>
           </div>
-          <WorkspacePanel
-            works={works}
-            onOpen={onOpenWork}
-            onRename={(id) => {
-              const w = works.find((x) => x.id === id)
-              setRename({ id, name: w?.name ?? '' })
-            }}
-            onDelete={onDeleteWork}
+        </>
+      )}
+
+      {!history && (
+        <div className="canvas-wrap">
+          <p className="empty">从右上角导入一张图片，开始拼豆。</p>
+        </div>
+      )}
+
+      <WorkspacePanel
+        works={works}
+        onOpen={onOpenWork}
+        onRename={(id) => {
+          const w = works.find((x) => x.id === id)
+          setRename({ id, name: w?.name ?? '' })
+        }}
+        onDelete={onDeleteWork}
+      />
+
+      {rename && (
+        <div className="rename-row">
+          <input
+            value={rename.name}
+            onChange={(e) => setRename({ ...rename, name: e.target.value })}
           />
-          {rename && (
-            <div style={{ marginTop: 4 }}>
-              <input value={rename.name} onChange={(e) => setRename({ ...rename, name: e.target.value })} />
-              <button onClick={onRenameWork}>确认</button>
-              <button onClick={() => setRename(null)}>取消</button>
-            </div>
-          )}
-          <ColorCountsList history={history} palette={MARD_PALETTE} />
+          <button className="btn btn-primary" onClick={onRenameWork}>
+            确认
+          </button>
+          <button className="btn" onClick={() => setRename(null)}>
+            取消
+          </button>
         </div>
       )}
     </div>
