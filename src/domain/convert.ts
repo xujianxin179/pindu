@@ -173,7 +173,5 @@ export function convertImageToPattern(
     .filter((entry) => retained.has(entry.id))
     .map((entry) => entry.id)
 
-  const colorCounts = computeColorCounts(pattern, activePalette)
-
-  return { pattern, activePalette, colorCounts }
+  return { pattern, activePalette }
 }

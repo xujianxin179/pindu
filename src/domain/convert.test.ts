@@ -64,7 +64,7 @@ describe('convertImageToPattern', () => {
     expect(result.activePalette).toEqual(['R', 'B'])
   })
 
-  it('colorCounts 统计每个色号的出现次数', () => {
+  it('转换结果不含 colorCounts（由 computeColorCounts 派生）', () => {
     const image: SourceImage = {
       width: 3,
       height: 1,
@@ -75,9 +75,10 @@ describe('convertImageToPattern', () => {
       ],
     }
     const result = convertImageToPattern(image, { width: 3, height: 1 }, palette)
-    expect(result.colorCounts.get('R')).toBe(2)
-    expect(result.colorCounts.get('B')).toBe(1)
-    expect(result.colorCounts.get('G')).toBeUndefined()
+    expect(result).not.toHaveProperty('colorCounts')
+    // 算色由 computeColorCounts 派生，计数正确
+    expect(computeColorCounts(result.pattern, result.activePalette).get('R')).toBe(2)
+    expect(computeColorCounts(result.pattern, result.activePalette).get('B')).toBe(1)
   })
 
   it('maxColors 限制时保留覆盖最多的色号（平局取色板顺序靠前）', () => {

@@ -45,11 +45,9 @@ export interface SourceImage {
   pixels: RGB[] // 长度 = width * height
 }
 
-/** 图片转图案的结果。 */
+/** 图片转图案的结果。colorCounts 可由 computeColorCounts(pattern, activePalette) 派生，不随结果存储。 */
 export interface ConvertResult {
   pattern: Pattern
   /** 用色集 (Active Palette)：实际用到的色号子集，按色板顺序。 */
   activePalette: ColorId[]
-  /** 算色 (Color Counting)：每个色号的出现次数。 */
-  colorCounts: Map<ColorId, number>
 }

@@ -219,7 +219,7 @@ function App() {
   async function onOpenWork(id: string) {
     const work = await storeRef.current!.get(id)
     if (!work) return
-    setResult({ pattern: work.pattern, activePalette: work.activePalette, colorCounts: computeColorCounts(work.pattern, work.activePalette) })
+    setResult({ pattern: work.pattern, activePalette: work.activePalette })
     setEditingWorkId(work.id)
     setSaveName(work.name)
     setHighlightId(null)
