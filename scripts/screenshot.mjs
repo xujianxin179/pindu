@@ -45,6 +45,14 @@ try {
 
   await page.waitForTimeout(1500)
   await page.screenshot({ path: 'scripts/shot-board.png' })
+
+  // 点击第一个算色 chip，验证高亮效果
+  const chip = page.locator('.count-chip').first()
+  if (await chip.count()) {
+    await chip.click()
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: 'scripts/shot-highlight.png' })
+  }
 } finally {
   await browser.close()
   server.kill()

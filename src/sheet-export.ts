@@ -5,7 +5,7 @@ import { buildSheetLayout } from './domain/sheet'
 import { computeColorCounts } from './domain/convert'
 import { drawGrid, CELL_SIZE } from './render-grid'
 import type { History } from './domain/edit'
-import type { ColorPalette } from './domain/types'
+import type { ColorId, ColorPalette } from './domain/types'
 
 const GUIDE_INTERVAL = 5
 /** 图纸下方用色清单的行高。 */
@@ -18,6 +18,7 @@ export function renderSheetToCanvas(
   history: History,
   palette: ColorPalette,
   showLabels = true,
+  highlightId: ColorId | null = null,
 ): HTMLCanvasElement {
   const { pattern, activePalette } = history.present
   const counts = computeColorCounts(pattern, activePalette)
@@ -39,7 +40,7 @@ export function renderSheetToCanvas(
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, layout.sheetWidth, layout.sheetHeight + listHeight)
 
-  drawGrid(ctx, pattern, palette, layout.gridX, layout.gridY)
+  drawGrid(ctx, pattern, palette, layout.gridX, layout.gridY, highlightId)
 
   // 行列标号：列标在顶部留白区、行标在左侧留白区（各垂直/水平居中），不压格子
   if (layout.colLabels.length) {
@@ -91,9 +92,10 @@ export function exportSheetPng(
   palette: ColorPalette,
   filename: string,
   showLabels = true,
+  highlightId: ColorId | null = null,
 ) {
   const canvas = document.createElement('canvas')
-  renderSheetToCanvas(canvas, history, palette, showLabels)
+  renderSheetToCanvas(canvas, history, palette, showLabels, highlightId)
   canvas.toBlob((blob) => {
     if (!blob) return
     downloadBlob(blob, filename)
@@ -101,9 +103,14 @@ export function exportSheetPng(
 }
 
 /** 生成图纸 PDF（等比缩放适配一页），导出与分享共用。 */
-function buildSheetPdf(history: History, palette: ColorPalette, showLabels: boolean): jsPDF {
+function buildSheetPdf(
+  history: History,
+  palette: ColorPalette,
+  showLabels: boolean,
+  highlightId: ColorId | null,
+): jsPDF {
   const canvas = document.createElement('canvas')
-  renderSheetToCanvas(canvas, history, palette, showLabels)
+  renderSheetToCanvas(canvas, history, palette, showLabels, highlightId)
   const pdf = new jsPDF({ orientation: canvas.width > canvas.height ? 'landscape' : 'portrait' })
   const pageW = pdf.internal.pageSize.getWidth()
   const pageH = pdf.internal.pageSize.getHeight()
@@ -122,8 +129,9 @@ export function exportSheetPdf(
   palette: ColorPalette,
   filename: string,
   showLabels = true,
+  highlightId: ColorId | null = null,
 ) {
-  buildSheetPdf(history, palette, showLabels).save(filename)
+  buildSheetPdf(history, palette, showLabels, highlightId).save(filename)
 }
 
 /** 分享图纸（PNG/PDF）：优先 Web Share API，不支持时降级为下载。与导出共用 renderSheetToCanvas。 */
@@ -133,13 +141,14 @@ export async function shareSheet(
   filename: string,
   showLabels = true,
   format: 'png' | 'pdf' = 'png',
+  highlightId: ColorId | null = null,
 ): Promise<void> {
   let blob: Blob
   if (format === 'pdf') {
-    blob = buildSheetPdf(history, palette, showLabels).output('blob')
+    blob = buildSheetPdf(history, palette, showLabels, highlightId).output('blob')
   } else {
     const canvas = document.createElement('canvas')
-    renderSheetToCanvas(canvas, history, palette, showLabels)
+    renderSheetToCanvas(canvas, history, palette, showLabels, highlightId)
     const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
     if (!pngBlob) return
     blob = pngBlob

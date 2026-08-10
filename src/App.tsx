@@ -82,6 +82,7 @@ function PatternCanvas({
   pattern,
   palette,
   tool,
+  highlightId,
   onPaint,
   onErase,
   onFill,
@@ -90,6 +91,7 @@ function PatternCanvas({
   pattern: Pattern
   palette: ColorPalette
   tool: Tool
+  highlightId: ColorId | null
   onPaint: (x: number, y: number) => void
   onErase: (x: number, y: number) => void
   onFill: (x0: number, y0: number, x1: number, y1: number) => void
@@ -106,8 +108,8 @@ function PatternCanvas({
     const ctx = canvas.getContext('2d')!
     canvas.width = pattern.width * CELL_SIZE
     canvas.height = pattern.height * CELL_SIZE
-    drawGrid(ctx, pattern, palette, 0, 0)
-  }, [pattern, palette])
+    drawGrid(ctx, pattern, palette, 0, 0, highlightId)
+  }, [pattern, palette, highlightId])
 
   /** 事件坐标 -> 网格坐标；越界返回 null。 */
   const cellAt = (e: PointerEvent<HTMLCanvasElement>) => {
@@ -227,8 +229,18 @@ function ActivePaletteBar({
   )
 }
 
-/** 算色清单：按 Active Palette 顺序列出每个色号 + 颜色样块 + 数量。 */
-function ColorCountsList({ history, palette }: { history: History; palette: ColorPalette }) {
+/** 算色清单：按 Active Palette 顺序列出每个色号 + 颜色样块 + 数量。点击 chip 高亮该色号在图案中的位置。 */
+function ColorCountsList({
+  history,
+  palette,
+  highlightId,
+  onHighlight,
+}: {
+  history: History
+  palette: ColorPalette
+  highlightId: ColorId | null
+  onHighlight: (id: ColorId | null) => void
+}) {
   const counts = useMemo(
     () => computeColorCounts(history.present.pattern, history.present.activePalette),
     [history],
@@ -237,11 +249,16 @@ function ColorCountsList({ history, palette }: { history: History; palette: Colo
     <div className="counts">
       <span className="counts-label">算色</span>
       {history.present.activePalette.map((id) => (
-        <span key={id} className="count-chip">
+        <button
+          key={id}
+          className={`count-chip${highlightId === id ? ' highlight' : ''}`}
+          onClick={() => onHighlight(highlightId === id ? null : id)}
+          title={`高亮 ${id}`}
+        >
           <span className="bead" style={beadStyle(id, palette)} />
           <span className="count-id">{id}</span>
           <span className="count-num">× {counts.get(id) ?? 0}</span>
-        </span>
+        </button>
       ))}
     </div>
   )
@@ -297,6 +314,7 @@ function App() {
   const [tool, setTool] = useState<Tool>('pen')
   const [selectedColor, setSelectedColor] = useState<ColorId>(MARD_PALETTE[0].id)
   const [showLabels, setShowLabels] = useState(true)
+  const [highlightId, setHighlightId] = useState<ColorId | null>(null)
   const [works, setWorks] = useState<WorkSummary[]>([])
   const [editingWorkId, setEditingWorkId] = useState<string | null>(null)
   const [rename, setRename] = useState<{ id: string; name: string } | null>(null)
@@ -503,6 +521,7 @@ function App() {
               pattern={present}
               palette={MARD_PALETTE}
               tool={tool}
+              highlightId={highlightId}
               onPaint={(x, y) => commitEdit((p) => setCell(p, x, y, selectedColor))}
               onErase={(x, y) => commitEdit((p) => eraseCell(p, x, y))}
               onFill={(x0, y0, x1, y1) => commitEdit((p) => fillRect(p, { x0, y0, x1, y1 }, selectedColor))}
@@ -516,18 +535,27 @@ function App() {
             </p>
           </div>
 
-          <ColorCountsList history={history} palette={MARD_PALETTE} />
+          <ColorCountsList
+            history={history}
+            palette={MARD_PALETTE}
+            highlightId={highlightId}
+            onHighlight={setHighlightId}
+          />
 
           <div className="sheet-actions">
             <button
               className="btn"
-              onClick={() => exportSheetPng(history, MARD_PALETTE, 'pindu-sheet.png', showLabels)}
+              onClick={() =>
+                exportSheetPng(history, MARD_PALETTE, 'pindu-sheet.png', showLabels, highlightId)
+              }
             >
               导出图纸 PNG
             </button>
             <button
               className="btn"
-              onClick={() => exportSheetPdf(history, MARD_PALETTE, 'pindu-sheet.pdf', showLabels)}
+              onClick={() =>
+                exportSheetPdf(history, MARD_PALETTE, 'pindu-sheet.pdf', showLabels, highlightId)
+              }
             >
               导出图纸 PDF
             </button>
@@ -536,7 +564,14 @@ function App() {
               defaultValue="png"
               style={{ background: 'var(--panel)', color: 'var(--ink)' }}
               onChange={(e) =>
-                shareSheet(history, MARD_PALETTE, `pindu-sheet.${e.target.value}`, showLabels, e.target.value as 'png' | 'pdf')
+                shareSheet(
+                  history,
+                  MARD_PALETTE,
+                  `pindu-sheet.${e.target.value}`,
+                  showLabels,
+                  e.target.value as 'png' | 'pdf',
+                  highlightId,
+                )
               }
             >
               <option value="png">分享图纸 PNG</option>
