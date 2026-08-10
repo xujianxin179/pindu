@@ -1,20 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSheetLayout, columnLabel } from './sheet'
-
-describe('columnLabel（Excel 式字母标号）', () => {
-  it('前 26 个是 A-Z', () => {
-    expect(columnLabel(0)).toBe('A')
-    expect(columnLabel(1)).toBe('B')
-    expect(columnLabel(25)).toBe('Z')
-  })
-
-  it('超过 26 后循环进位：AA、AB、AZ、BA', () => {
-    expect(columnLabel(26)).toBe('AA')
-    expect(columnLabel(27)).toBe('AB')
-    expect(columnLabel(51)).toBe('AZ')
-    expect(columnLabel(52)).toBe('BA')
-  })
-})
+import { buildSheetLayout } from './sheet'
 
 describe('buildSheetLayout', () => {
   it('无标号时网格贴左上角，尺寸 = 网格尺寸', () => {
@@ -51,9 +36,9 @@ describe('buildSheetLayout', () => {
     expect(l.hLines).toEqual([0, 10])
   })
 
-  it('标号数组长度与网格一致', () => {
+  it('标号数组长度与网格一致，列标行标均为数字', () => {
     const l = buildSheetLayout(3, 2, { cellSize: 10, showLabels: true })
-    expect(l.colLabels).toEqual(['A', 'B', 'C'])
+    expect(l.colLabels).toEqual(['1', '2', '3'])
     expect(l.rowLabels).toEqual(['1', '2'])
   })
 

@@ -3,21 +3,9 @@
  * 纯函数、确定性，供 Canvas 渲染使用。
  */
 
-/** Excel 式列标号：0->A, 25->Z, 26->AA, 51->AZ, 52->BA。 */
-export function columnLabel(index: number): string {
-  let n = index + 1
-  let label = ''
-  while (n > 0) {
-    const rem = (n - 1) % 26
-    label = String.fromCharCode(65 + rem) + label
-    n = Math.floor((n - 1) / 26)
-  }
-  return label
-}
-
 export interface SheetOptions {
   cellSize: number
-  /** 每几格一条粗辅助线（ticket 06 默认 5）。 */
+  /** 每几格一条粗辅助线（默认 5）。 */
   guideInterval?: number
   /** 是否显示行列标号。 */
   showLabels?: boolean
@@ -65,7 +53,8 @@ export function buildSheetLayout(
   for (let y = 0; y <= gridHeight; y += cellSize * guideInterval) hLines.push(y)
   if (hLines[hLines.length - 1] !== gridHeight) hLines.push(gridHeight)
 
-  const colLabels = showLabels ? Array.from({ length: width }, (_, i) => columnLabel(i)) : []
+  // 行列标号均为数字：列 1..width、行 1..height
+  const colLabels = showLabels ? Array.from({ length: width }, (_, i) => String(i + 1)) : []
   const rowLabels = showLabels ? Array.from({ length: height }, (_, i) => String(i + 1)) : []
 
   return {

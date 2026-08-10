@@ -3,15 +3,17 @@
 import { jsPDF } from 'jspdf'
 import { buildSheetLayout } from './domain/sheet'
 import { computeColorCounts } from './domain/convert'
-import { drawGrid, CELL_SIZE } from './render-grid'
+import { drawGrid } from './render-grid'
 import type { ColorId, ColorPalette, ConvertResult } from './domain/types'
 
 const GUIDE_INTERVAL = 5
+/** 导出图纸格子边长：16px 便于每格标注色号。 */
+const SHEET_CELL_SIZE = 16
 /** 图纸下方用色清单的行高。 */
 const LIST_ROW_HEIGHT = 20
 const LIST_MARGIN = 10
 
-/** 把图纸渲染到指定 Canvas（含辅助线、行列标号与用色清单）。返回该 canvas。 */
+/** 把图纸渲染到指定 Canvas（含辅助线、行列标号、每格色号标注与用色清单）。返回该 canvas。 */
 export function renderSheetToCanvas(
   canvas: HTMLCanvasElement,
   result: ConvertResult,
@@ -21,7 +23,7 @@ export function renderSheetToCanvas(
   const { pattern, activePalette } = result
   const counts = computeColorCounts(pattern, activePalette)
   const layout = buildSheetLayout(pattern.width, pattern.height, {
-    cellSize: CELL_SIZE,
+    cellSize: SHEET_CELL_SIZE,
     guideInterval: GUIDE_INTERVAL,
     showLabels: true,
     labelGutter: 20,
@@ -38,20 +40,20 @@ export function renderSheetToCanvas(
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, layout.sheetWidth, layout.sheetHeight + listHeight)
 
-  drawGrid(ctx, pattern, palette, layout.gridX, layout.gridY, highlightId)
+  drawGrid(ctx, pattern, palette, layout.gridX, layout.gridY, highlightId, '#ffffff', SHEET_CELL_SIZE)
 
   // 行列标号：列标在顶部留白区、行标在左侧留白区（各垂直/水平居中），不压格子
   if (layout.colLabels.length) {
     ctx.fillStyle = '#333333'
-    ctx.font = '10px sans-serif'
+    ctx.font = '11px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     for (let x = 0; x < pattern.width; x++) {
-      ctx.fillText(layout.colLabels[x], layout.gridX + x * CELL_SIZE + CELL_SIZE / 2, layout.gridY / 2)
+      ctx.fillText(layout.colLabels[x], layout.gridX + x * SHEET_CELL_SIZE + SHEET_CELL_SIZE / 2, layout.gridY / 2)
     }
     ctx.textAlign = 'right'
     for (let y = 0; y < pattern.height; y++) {
-      ctx.fillText(layout.rowLabels[y], layout.gridX / 2, layout.gridY + y * CELL_SIZE + CELL_SIZE / 2)
+      ctx.fillText(layout.rowLabels[y], layout.gridX / 2, layout.gridY + y * SHEET_CELL_SIZE + SHEET_CELL_SIZE / 2)
     }
   }
 
