@@ -75,6 +75,16 @@ export function renderSheetToCanvas(
   return canvas
 }
 
+/** 下载 Blob 为文件（导出 PNG 与分享降级共用）。 */
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 /** 导出图纸为 PNG：渲染到离屏 canvas 后下载。 */
 export function exportSheetPng(
   history: History,
@@ -86,22 +96,12 @@ export function exportSheetPng(
   renderSheetToCanvas(canvas, history, palette, showLabels)
   canvas.toBlob((blob) => {
     if (!blob) return
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
+    downloadBlob(blob, filename)
   }, 'image/png')
 }
 
-/** 导出图纸为 PDF：渲染到离屏 canvas，等比缩放适配一页嵌入 PDF 下载。 */
-export function exportSheetPdf(
-  history: History,
-  palette: ColorPalette,
-  filename: string,
-  showLabels = true,
-) {
+/** 生成图纸 PDF（等比缩放适配一页），导出与分享共用。 */
+function buildSheetPdf(history: History, palette: ColorPalette, showLabels: boolean): jsPDF {
   const canvas = document.createElement('canvas')
   renderSheetToCanvas(canvas, history, palette, showLabels)
   const pdf = new jsPDF({ orientation: canvas.width > canvas.height ? 'landscape' : 'portrait' })
@@ -113,30 +113,46 @@ export function exportSheetPdf(
   const w = canvas.width * scale
   const h = canvas.height * scale
   pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pageW - w) / 2, (pageH - h) / 2, w, h)
-  pdf.save(filename)
+  return pdf
 }
 
-/** 分享图纸为 PNG：优先 Web Share API，不支持时降级为下载。与导出共用 renderSheetToCanvas。 */
-export async function shareSheetPng(
+/** 导出图纸为 PDF：生成 PDF 并下载。 */
+export function exportSheetPdf(
   history: History,
   palette: ColorPalette,
   filename: string,
   showLabels = true,
+) {
+  buildSheetPdf(history, palette, showLabels).save(filename)
+}
+
+/** 分享图纸（PNG/PDF）：优先 Web Share API，不支持时降级为下载。与导出共用 renderSheetToCanvas。 */
+export async function shareSheet(
+  history: History,
+  palette: ColorPalette,
+  filename: string,
+  showLabels = true,
+  format: 'png' | 'pdf' = 'png',
 ): Promise<void> {
-  const canvas = document.createElement('canvas')
-  renderSheetToCanvas(canvas, history, palette, showLabels)
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
-  if (!blob) return
-  const file = new File([blob], filename, { type: 'image/png' })
-  if (navigator.share && navigator.canShare?.({ files: [file] })) {
-    await navigator.share({ files: [file], title: filename })
+  let blob: Blob
+  if (format === 'pdf') {
+    blob = buildSheetPdf(history, palette, showLabels).output('blob')
   } else {
-    // 降级：与导出 PNG 相同路径下载
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
+    const canvas = document.createElement('canvas')
+    renderSheetToCanvas(canvas, history, palette, showLabels)
+    const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    if (!pngBlob) return
+    blob = pngBlob
+  }
+  const file = new File([blob], filename, { type: format === 'pdf' ? 'application/pdf' : 'image/png' })
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: filename })
+    } catch {
+      // 用户取消分享（AbortError）等，忽略
+    }
+  } else {
+    // 降级：下载文件
+    downloadBlob(blob, filename)
   }
 }
