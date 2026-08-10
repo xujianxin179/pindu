@@ -172,12 +172,12 @@ describe('convertImageToPattern', () => {
 describe('computeColorCounts', () => {
   it('空图案返回空统计', () => {
     const pattern: Pattern = { width: 0, height: 0, cells: [] }
-    expect(computeColorCounts(pattern)).toEqual(new Map())
+    expect(computeColorCounts(pattern, [])).toEqual(new Map())
   })
 
   it('单色图案返回该色计数', () => {
     const pattern: Pattern = { width: 2, height: 2, cells: ['R', 'R', 'R', 'R'] }
-    expect(computeColorCounts(pattern)).toEqual(new Map([['R', 4]]))
+    expect(computeColorCounts(pattern, ['R'])).toEqual(new Map([['R', 4]]))
   })
 
   it('多色图案按色号统计，跳过 null 空格', () => {
@@ -186,11 +186,22 @@ describe('computeColorCounts', () => {
       height: 2,
       cells: ['R', null, 'B', 'R', 'R', 'G'],
     }
-    expect(computeColorCounts(pattern)).toEqual(
+    expect(computeColorCounts(pattern, ['R', 'B', 'G'])).toEqual(
       new Map([
         ['R', 3],
         ['B', 1],
         ['G', 1],
+      ]),
+    )
+  })
+
+  it('结果覆盖 Active Palette 全量，含计数为 0 的色号', () => {
+    const pattern: Pattern = { width: 1, height: 1, cells: ['R'] }
+    expect(computeColorCounts(pattern, ['R', 'G', 'B'])).toEqual(
+      new Map([
+        ['R', 1],
+        ['G', 0],
+        ['B', 0],
       ]),
     )
   })

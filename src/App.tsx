@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, type ChangeEvent } from 'react'
-import { convertImageToPattern, computeColorCounts } from './domain/convert'
+import { convertImageToPattern } from './domain/convert'
 import { MARD_PALETTE } from './domain/palette'
-import type { ColorPalette, Pattern, RGB, SourceImage } from './domain/types'
+import type { ColorPalette, ConvertResult, Pattern, RGB, SourceImage } from './domain/types'
 
 const CELL_SIZE = 12
 /** 读入图片前先缩到长边不超过此值（px），限制内存峰值。 */
@@ -68,16 +68,22 @@ function PatternCanvas({ pattern, palette }: { pattern: Pattern; palette: ColorP
   return <canvas ref={ref} />
 }
 
-/** 算色清单：按色板顺序列出每个用到的色号 + 颜色样块 + 数量。 */
-function ColorCountsList({ pattern, palette }: { pattern: Pattern; palette: ColorPalette }) {
-  const counts = computeColorCounts(pattern)
+/** 算色清单：按 Active Palette 顺序列出每个色号 + 颜色样块 + 数量。 */
+function ColorCountsList({
+  result,
+  palette,
+}: {
+  result: ConvertResult
+  palette: ColorPalette
+}) {
   return (
     <div>
-      {palette
-        .filter((e) => counts.has(e.id))
-        .map((e) => (
+      {result.activePalette.map((id) => {
+        const entry = palette.find((e) => e.id === id)!
+        const count = result.colorCounts.get(id) ?? 0
+        return (
           <span
-            key={e.id}
+            key={id}
             style={{ display: 'inline-flex', alignItems: 'center', margin: '2px 10px 2px 0' }}
           >
             <span
@@ -86,14 +92,15 @@ function ColorCountsList({ pattern, palette }: { pattern: Pattern; palette: Colo
                 height: 14,
                 borderRadius: 3,
                 border: '1px solid #ccc',
-                background: `rgb(${e.rgb.r},${e.rgb.g},${e.rgb.b})`,
+                background: `rgb(${entry.rgb.r},${entry.rgb.g},${entry.rgb.b})`,
                 marginRight: 4,
                 display: 'inline-block',
               }}
             />
-            {e.id} × {counts.get(e.id)}
+            {id} × {count}
           </span>
-        ))}
+        )
+      })}
     </div>
   )
 }
@@ -103,17 +110,17 @@ function App() {
   const [longSide, setLongSide] = useState(DEFAULT_LONG_SIDE)
   const [maxColors, setMaxColors] = useState(DEFAULT_MAX_COLORS)
   const [dithering, setDithering] = useState(false)
-  const [pattern, setPattern] = useState<Pattern | null>(null)
+  const [result, setResult] = useState<ConvertResult | null>(null)
 
   useEffect(() => {
     if (!image) return
     const size = computeGridSize(image, longSide)
-    const result = convertImageToPattern(
+    const r = convertImageToPattern(
       image,
       { ...size, maxColors, dithering },
       MARD_PALETTE,
     )
-    setPattern(result.pattern)
+    setResult(r)
   }, [image, longSide, maxColors, dithering])
 
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
@@ -159,13 +166,13 @@ function App() {
           </label>
         </div>
       )}
-      {pattern && (
+      {result && (
         <div style={{ marginTop: 16 }}>
-          <PatternCanvas pattern={pattern} palette={MARD_PALETTE} />
+          <PatternCanvas pattern={result.pattern} palette={MARD_PALETTE} />
           <p style={{ color: '#666' }}>
-            {pattern.width} × {pattern.height} 格
+            {result.pattern.width} × {result.pattern.height} 格
           </p>
-          <ColorCountsList pattern={pattern} palette={MARD_PALETTE} />
+          <ColorCountsList result={result} palette={MARD_PALETTE} />
         </div>
       )}
     </div>

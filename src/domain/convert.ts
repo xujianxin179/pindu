@@ -9,11 +9,16 @@ import type {
 } from './types'
 
 /**
- * 算色 (Color Counting)：统计图案里每个色号各需要多少颗珠子。
- * 跳过 null 空格；与 colorCounts 的一致性由枚举测试锁定。
+ * 算色 (Color Counting)：统计图案里每种色号各需要多少颗珠子。
+ * 结果覆盖 Active Palette 全量（含计数为 0 的色号，保证"用色集里每种色号"都有条目），
+ * 并跳过 null 空格。与 colorCounts 的一致性由枚举测试锁定。
  */
-export function computeColorCounts(pattern: Pattern): Map<ColorId, number> {
+export function computeColorCounts(
+  pattern: Pattern,
+  activePalette: ColorId[],
+): Map<ColorId, number> {
   const counts = new Map<ColorId, number>()
+  for (const id of activePalette) counts.set(id, 0)
   for (const id of pattern.cells) {
     if (id === null) continue
     counts.set(id, (counts.get(id) ?? 0) + 1)
@@ -168,7 +173,7 @@ export function convertImageToPattern(
     .filter((entry) => retained.has(entry.id))
     .map((entry) => entry.id)
 
-  const colorCounts = computeColorCounts(pattern)
+  const colorCounts = computeColorCounts(pattern, activePalette)
 
   return { pattern, activePalette, colorCounts }
 }
