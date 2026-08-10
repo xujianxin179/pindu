@@ -9,7 +9,7 @@ export interface Work {
   createdAt: number
   updatedAt: number
   /** 原图缩略图 data URL（可选）。 */
-  thumbnail?: string
+  sourceThumbnail?: string
 }
 
 /** 作品列表项：元信息，不含图案数据（列表页用）。 */
@@ -17,7 +17,17 @@ export interface WorkSummary {
   id: string
   name: string
   updatedAt: number
-  thumbnail?: string
+  sourceThumbnail?: string
+}
+
+/** 从 Work 投影出列表项（Memory 与 IndexedDB 两处共用，避免投影逻辑分叉）。 */
+export function toSummary(work: Work): WorkSummary {
+  return {
+    id: work.id,
+    name: work.name,
+    updatedAt: work.updatedAt,
+    sourceThumbnail: work.sourceThumbnail,
+  }
 }
 
 /** 作品库存储契约：领域逻辑依赖此接口，内存版可测试、IndexedDB 版在浏览器跑。 */
@@ -34,7 +44,7 @@ export class MemoryWorkStore implements WorkStore {
 
   async list(): Promise<WorkSummary[]> {
     return [...this.works.values()]
-      .map((w) => ({ id: w.id, name: w.name, updatedAt: w.updatedAt, thumbnail: w.thumbnail }))
+      .map(toSummary)
       .sort((a, b) => b.updatedAt - a.updatedAt)
   }
 

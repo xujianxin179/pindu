@@ -304,8 +304,8 @@ function WorkspacePanel({
               borderBottom: '1px solid #eee',
             }}
           >
-            {w.thumbnail ? (
-              <img src={w.thumbnail} alt="" style={{ width: 24, height: 24, objectFit: 'cover' }} />
+            {w.sourceThumbnail ? (
+              <img src={w.sourceThumbnail} alt="" style={{ width: 24, height: 24, objectFit: 'cover' }} />
             ) : (
               <span style={{ width: 24, height: 24, background: '#eee', display: 'inline-block' }} />
             )}
@@ -331,8 +331,8 @@ function App() {
   const [selectedColor, setSelectedColor] = useState<ColorId>(MARD_PALETTE[0].id)
   const [showLabels, setShowLabels] = useState(true)
   const [works, setWorks] = useState<WorkSummary[]>([])
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
+  const [editingWorkId, setEditingWorkId] = useState<string | null>(null)
+  const [rename, setRename] = useState<{ id: string; name: string } | null>(null)
   const [saveName, setSaveName] = useState('')
   const storeRef = useRef<WorkStore | null>(null)
   if (!storeRef.current) storeRef.current = new IdbWorkStore()
@@ -377,22 +377,27 @@ function App() {
     setImage(img)
   }
 
-  /** 保存当前图案为作品：写入作品库。 */
+  /** 保存当前图案为作品：续编（editingWorkId）时更新原作品，否则新建。 */
   async function onSaveWork(name: string) {
     if (!history || !name.trim()) return
+    const now = Date.now()
+    const existing = editingWorkId ? await storeRef.current!.get(editingWorkId) : null
     const work: Work = {
-      id: crypto.randomUUID(),
+      id: existing?.id ?? crypto.randomUUID(),
       name: name.trim(),
       pattern: history.present.pattern,
       activePalette: history.present.activePalette,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      sourceThumbnail: existing?.sourceThumbnail,
     }
     await storeRef.current!.save(work)
+    setEditingWorkId(work.id)
+    setSaveName('')
     await refreshWorks()
   }
 
-  /** 打开作品：恢复 pattern 与用色集。 */
+  /** 打开作品：恢复 pattern 与用色集，记录续编目标 id。 */
   async function onOpenWork(id: string) {
     const work = await storeRef.current!.get(id)
     if (!work) return
@@ -400,15 +405,17 @@ function App() {
       createHistory({ pattern: work.pattern, activePalette: work.activePalette }),
     )
     setSelectedColor(work.activePalette[0] ?? MARD_PALETTE[0].id)
+    setEditingWorkId(work.id)
+    setSaveName(work.name)
     setImage(null)
   }
 
-  async function onRenameWork(id: string) {
-    if (!renameValue.trim()) return
-    const work = await storeRef.current!.get(id)
+  async function onRenameWork() {
+    if (!rename || !rename.name.trim()) return
+    const work = await storeRef.current!.get(rename.id)
     if (!work) return
-    await storeRef.current!.save({ ...work, name: renameValue.trim(), updatedAt: Date.now() })
-    setEditingId(null)
+    await storeRef.current!.save({ ...work, name: rename.name.trim(), updatedAt: Date.now() })
+    setRename(null)
     await refreshWorks()
   }
 
@@ -423,38 +430,36 @@ function App() {
     <div style={{ padding: 16 }}>
       <h1>pinDu 拼豆</h1>
       <input type="file" accept="image/*" onChange={onFile} />
-      {image && (
-        <div style={{ marginTop: 12 }}>
-          <label>
-            长边珠数{' '}
-            <input
-              type="number"
-              min={1}
-              max={200}
-              value={longSide}
-              onChange={(e) => setLongSide(Math.max(1, Number(e.target.value)))}
-            />
-          </label>{' '}
-          <label>
-            用色数{' '}
-            <input
-              type="number"
-              min={1}
-              max={MAX_PALETTE_SIZE}
-              value={maxColors}
-              onChange={(e) => setMaxColors(Math.max(1, Number(e.target.value)))}
-            />
-          </label>{' '}
-          <label>
-            <input
-              type="checkbox"
-              checked={dithering}
-              onChange={(e) => setDithering(e.target.checked)}
-            />{' '}
-            抖动
-          </label>
-        </div>
-      )}
+      <div style={{ marginTop: 12 }}>
+        <label>
+          长边珠数{' '}
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={longSide}
+            onChange={(e) => setLongSide(Math.max(1, Number(e.target.value)))}
+          />
+        </label>{' '}
+        <label>
+          用色数{' '}
+          <input
+            type="number"
+            min={1}
+            max={MAX_PALETTE_SIZE}
+            value={maxColors}
+            onChange={(e) => setMaxColors(Math.max(1, Number(e.target.value)))}
+          />
+        </label>{' '}
+        <label>
+          <input
+            type="checkbox"
+            checked={dithering}
+            onChange={(e) => setDithering(e.target.checked)}
+          />{' '}
+          抖动
+        </label>
+      </div>
       {history && (
         <div style={{ marginTop: 12 }}>
           {TOOLS.map((t) => (
@@ -546,17 +551,16 @@ function App() {
             works={works}
             onOpen={onOpenWork}
             onRename={(id) => {
-              setEditingId(id)
               const w = works.find((x) => x.id === id)
-              setRenameValue(w?.name ?? '')
+              setRename({ id, name: w?.name ?? '' })
             }}
             onDelete={onDeleteWork}
           />
-          {editingId && (
+          {rename && (
             <div style={{ marginTop: 4 }}>
-              <input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
-              <button onClick={() => onRenameWork(editingId)}>确认</button>
-              <button onClick={() => setEditingId(null)}>取消</button>
+              <input value={rename.name} onChange={(e) => setRename({ ...rename, name: e.target.value })} />
+              <button onClick={onRenameWork}>确认</button>
+              <button onClick={() => setRename(null)}>取消</button>
             </div>
           )}
           <ColorCountsList history={history} palette={MARD_PALETTE} />
