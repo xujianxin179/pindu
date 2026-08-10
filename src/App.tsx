@@ -14,7 +14,7 @@ import {
   type History,
 } from './domain/edit'
 import type { ColorId, ColorPalette, Pattern, RGB, SourceImage } from './domain/types'
-import { exportSheetPng, exportSheetPdf } from './sheet-export'
+import { exportSheetPng, exportSheetPdf, shareSheetPng } from './sheet-export'
 import { drawGrid, CELL_SIZE } from './render-grid'
 
 const DEFAULT_LONG_SIDE = 40
@@ -420,6 +420,11 @@ function App() {
               onClick={() => exportSheetPdf(history, MARD_PALETTE, 'pindu-sheet.pdf', showLabels)}
             >
               导出 PDF
+            </button>{' '}
+            <button
+              onClick={() => shareSheetPng(history, MARD_PALETTE, 'pindu-sheet.png', showLabels)}
+            >
+              分享
             </button>
           </div>
           <ColorCountsList history={history} palette={MARD_PALETTE} />

@@ -115,3 +115,28 @@ export function exportSheetPdf(
   pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pageW - w) / 2, (pageH - h) / 2, w, h)
   pdf.save(filename)
 }
+
+/** 分享图纸为 PNG：优先 Web Share API，不支持时降级为下载。与导出共用 renderSheetToCanvas。 */
+export async function shareSheetPng(
+  history: History,
+  palette: ColorPalette,
+  filename: string,
+  showLabels = true,
+): Promise<void> {
+  const canvas = document.createElement('canvas')
+  renderSheetToCanvas(canvas, history, palette, showLabels)
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+  if (!blob) return
+  const file = new File([blob], filename, { type: 'image/png' })
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ files: [file], title: filename })
+  } else {
+    // 降级：与导出 PNG 相同路径下载
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+}
