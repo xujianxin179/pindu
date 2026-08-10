@@ -59,32 +59,21 @@ function resample(image: SourceImage, width: number, height: number): RGB[] {
 }
 
 /**
- * 用色数限制：把当前用量最少的色号合并到与其最近的剩余色号，
- * 直到用色数不超过 maxColors。返回保留的色号集合（按色板顺序）。
+ * 用色数限制：按覆盖数降序选出最多 maxColors 个色号（tie 按色板顺序）。
+ * 这是"最能还原本图"的 popularity 近似：保留覆盖最多、被实际用到的色号。
  */
-function enforceMaxColors(cells: ColorId[], maxColors: number, palette: ColorPalette): Set<ColorId> {
-  const retained = new Set(cells)
-  while (retained.size > maxColors) {
-    let leastId: ColorId | null = null
-    let leastCount = Number.POSITIVE_INFINITY
-    for (const id of retained) {
-      const count = cells.filter((c) => c === id).length
-      if (count < leastCount) {
-        leastCount = count
-        leastId = id
-      }
-    }
-    if (leastId === null) break
-    const nearest = nearestColorId(
-      palette.find((e) => e.id === leastId)!.rgb,
-      palette.filter((e) => e.id !== leastId),
-    )
-    for (let i = 0; i < cells.length; i++) {
-      if (cells[i] === leastId) cells[i] = nearest
-    }
-    retained.delete(leastId)
-  }
-  return retained
+function selectRetained(
+  cells: ColorId[],
+  maxColors: number,
+  palette: ColorPalette,
+): Set<ColorId> {
+  const counts = new Map<ColorId, number>()
+  for (const id of cells) counts.set(id, (counts.get(id) ?? 0) + 1)
+  const order = new Map(palette.map((e, i) => [e.id, i]))
+  const sorted = [...counts.entries()].sort(
+    (a, b) => b[1] - a[1] || order.get(a[0])! - order.get(b[0])!,
+  )
+  return new Set(sorted.slice(0, maxColors).map(([id]) => id))
 }
 
 /** 抖动 + 量化：Floyd-Steinberg 误差扩散。 */
@@ -97,18 +86,18 @@ function ditherAndQuantize(sampled: RGB[], width: number, height: number, palett
     for (let x = 0; x < width; x++) {
       const idx = y * width + x
       const base = sampled[idx]
-      const q = {
+      const candidate = {
         r: base.r + Math.round(err[idx].r),
         g: base.g + Math.round(err[idx].g),
         b: base.b + Math.round(err[idx].b),
       }
-      const id = nearestColorId(q, palette)
+      const id = nearestColorId(candidate, palette)
       cells.push(id)
       const chosen = palette.find((e) => e.id === id)!.rgb
       const diff = {
-        r: q.r - chosen.r,
-        g: q.g - chosen.g,
-        b: q.b - chosen.b,
+        r: candidate.r - chosen.r,
+        g: candidate.g - chosen.g,
+        b: candidate.b - chosen.b,
       }
       const right = idx + 1
       const down = idx + width
@@ -134,8 +123,8 @@ function ditherAndQuantize(sampled: RGB[], width: number, height: number, palett
 
 /**
  * 图片转图案（核心转换管线）。
- * maxColors：用色数限制（按色板顺序保留，超出时合并最少色到最近色）。
- * dithering：默认关；开启时用 Floyd-Steinberg 误差扩散。
+ * maxColors：先按"覆盖最多"选出用色子集（Active Palette），再在子集上量化；
+ * dithering：默认关，开启时在（受限的）子集上用 Floyd-Steinberg 误差扩散。
  */
 export function convertImageToPattern(
   image: SourceImage,
@@ -144,17 +133,20 @@ export function convertImageToPattern(
 ): ConvertResult {
   const { width, height, maxColors, dithering = false } = params
   const sampled = resample(image, width, height)
-  let cells: ColorId[]
-  if (dithering) {
-    cells = ditherAndQuantize(sampled, width, height, palette)
-  } else {
-    cells = sampled.map((rgb) => nearestColorId(rgb, palette))
-  }
 
   let retained: Set<ColorId>
-  if (maxColors !== undefined && maxColors < cells.length) {
-    retained = enforceMaxColors(cells, maxColors, palette)
+  let cells: ColorId[]
+  if (maxColors !== undefined) {
+    const initial = sampled.map((rgb) => nearestColorId(rgb, palette))
+    retained = selectRetained(initial, maxColors, palette)
+    const subsetPalette = palette.filter((e) => retained.has(e.id))
+    cells = dithering
+      ? ditherAndQuantize(sampled, width, height, subsetPalette)
+      : sampled.map((rgb) => nearestColorId(rgb, subsetPalette))
   } else {
+    cells = dithering
+      ? ditherAndQuantize(sampled, width, height, palette)
+      : sampled.map((rgb) => nearestColorId(rgb, palette))
     retained = new Set(cells)
   }
 

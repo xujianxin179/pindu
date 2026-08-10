@@ -106,7 +106,7 @@ function App() {
               min={1}
               max={200}
               value={longSide}
-              onChange={(e) => setLongSide(Number(e.target.value))}
+              onChange={(e) => setLongSide(Math.max(1, Number(e.target.value)))}
             />
           </label>{' '}
           <label>
@@ -116,7 +116,7 @@ function App() {
               min={1}
               max={MAX_PALETTE_SIZE}
               value={maxColors}
-              onChange={(e) => setMaxColors(Number(e.target.value))}
+              onChange={(e) => setMaxColors(Math.max(1, Number(e.target.value)))}
             />
           </label>{' '}
           <label>

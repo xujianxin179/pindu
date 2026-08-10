@@ -80,20 +80,22 @@ describe('convertImageToPattern', () => {
     expect(result.colorCounts.get('G')).toBeUndefined()
   })
 
-  it('maxColors 超出时，把覆盖格子最少的色号合并到最近的剩余色号', () => {
-    // 3 色各 1 格，限制 2 色：红(255,0,0) 到绿/蓝距离相等，平局取色板顺序靠前的绿
+  it('maxColors 限制时保留覆盖最多的色号（平局取色板顺序靠前）', () => {
+    // 红 2 格、绿 1 格、蓝 1 格，限制 2 色：保留红+绿（绿比蓝靠前）。
+    // 蓝像素在 {R,G} 子集内到两者距离相等（各差一个通道 255），平局取顺序靠前的 R。
     const image: SourceImage = {
-      width: 3,
+      width: 4,
       height: 1,
       pixels: [
         { r: 255, g: 0, b: 0 }, // 红
         { r: 0, g: 255, b: 0 }, // 绿
         { r: 0, g: 0, b: 255 }, // 蓝
+        { r: 255, g: 0, b: 0 }, // 红
       ],
     }
-    const result = convertImageToPattern(image, { width: 3, height: 1, maxColors: 2 }, palette)
-    expect(result.pattern.cells).toEqual(['G', 'G', 'B'])
-    expect(result.activePalette).toEqual(['G', 'B'])
+    const result = convertImageToPattern(image, { width: 4, height: 1, maxColors: 2 }, palette)
+    expect(result.pattern.cells).toEqual(['R', 'G', 'R', 'R'])
+    expect(result.activePalette).toEqual(['R', 'G'])
   })
 
   it('maxColors 大于等于实际用色数时不缩减', () => {
@@ -127,13 +129,6 @@ describe('convertImageToPattern', () => {
   })
 
   it('dithering 开启时误差扩散可改变边界格子的选色', () => {
-    // 手工推演 Floyd-Steinberg（2x2 行优先；权重：右 7/16、下 5/16、左下 3/16、右下 1/16）：
-    // p0=(255,0,120) -> R（14400<83250），误差 (0,0,120)：7/16→p1、5/16→p2、1/16→p3
-    // p1=(150,0,110)+(0,0,52.5)=(150,0,162.5)：到红 37431 > 到蓝 31056 -> B
-    //    p1 误差 (150,0,-92.5)：3/16→p2、5/16→p3
-    // p2=(150,0,110)+(0,0,37.5)+(28.1,0,-17.3)=(178.1,0,130.2)：到红 22864 < 到蓝 47295 -> R
-    //    p2 误差 (-76.9,0,130.2)：7/16→p3
-    // p3=(150,0,110)+(0,0,7.5)+(46.9,0,-28.9)+(-33.6,0,57)=(163.3,0,145.6)：到红 29609 < 到蓝 38638 -> R
     const image: SourceImage = {
       width: 2,
       height: 2,
@@ -147,5 +142,29 @@ describe('convertImageToPattern', () => {
     const result = convertImageToPattern(image, { width: 2, height: 2, dithering: true }, palette)
     expect(result.pattern.cells).toEqual(['R', 'B', 'R', 'R'])
     expect(result.activePalette).toEqual(['R', 'B'])
+  })
+
+  it('dithering 与 maxColors 组合时，输出限定在选出的子集内', () => {
+    // 4 个明显不同的颜色，限 2 色：断言不变量（结果全在子集内、子集不超上限），
+    // 不锁精确格子（组合推演过于临界、脆）。
+    const image: SourceImage = {
+      width: 2,
+      height: 2,
+      pixels: [
+        { r: 255, g: 0, b: 0 }, // 红
+        { r: 0, g: 255, b: 0 }, // 绿
+        { r: 0, g: 0, b: 255 }, // 蓝
+        { r: 255, g: 255, b: 255 }, // 白
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 2, height: 2, maxColors: 2, dithering: true },
+      palette,
+    )
+    expect(result.activePalette.length).toBeLessThanOrEqual(2)
+    for (const cell of result.pattern.cells) {
+      expect(result.activePalette).toContain(cell)
+    }
   })
 })
