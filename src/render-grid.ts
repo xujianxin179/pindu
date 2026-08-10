@@ -8,7 +8,8 @@ export const CELL_SIZE = 12
 /**
  * 在 ctx 上绘制网格：每格填色 + 细网格线 + 每 5 格一条粗辅助线。
  * gridX/gridY 为网格区左上角偏移；canvas 尺寸由调用方负责。
- * highlightId 非空时：该色号的格子保持全亮，其余格子变暗（拼豆定位辅助）。
+ * highlightId 非空时：该色号的格子保持全亮并按行优先标序号（1,2,3…），
+ * 其余格子变暗（拼豆定位辅助）。
  */
 export function drawGrid(
   ctx: CanvasRenderingContext2D,
@@ -41,13 +42,14 @@ export function drawGrid(
     if (highlightId !== null && id !== highlightId) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
       ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE)
-    } else if (highlightId !== null && id === highlightId) {
+    } else if (highlightId !== null) {
       highlightSeq++
+      const label = String(highlightSeq)
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'
       ctx.lineWidth = 3
-      ctx.strokeText(String(highlightSeq), x + CELL_SIZE / 2, y + CELL_SIZE / 2)
+      ctx.strokeText(label, x + CELL_SIZE / 2, y + CELL_SIZE / 2)
       ctx.fillStyle = '#ffffff'
-      ctx.fillText(String(highlightSeq), x + CELL_SIZE / 2, y + CELL_SIZE / 2)
+      ctx.fillText(label, x + CELL_SIZE / 2, y + CELL_SIZE / 2)
     }
   }
 
