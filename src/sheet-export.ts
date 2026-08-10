@@ -4,8 +4,7 @@ import { jsPDF } from 'jspdf'
 import { buildSheetLayout } from './domain/sheet'
 import { computeColorCounts } from './domain/convert'
 import { drawGrid, CELL_SIZE } from './render-grid'
-import type { History } from './domain/edit'
-import type { ColorId, ColorPalette } from './domain/types'
+import type { ColorId, ColorPalette, ConvertResult } from './domain/types'
 
 const GUIDE_INTERVAL = 5
 /** 图纸下方用色清单的行高。 */
@@ -15,12 +14,12 @@ const LIST_MARGIN = 10
 /** 把图纸渲染到指定 Canvas（含辅助线、行列标号与用色清单）。返回该 canvas。 */
 export function renderSheetToCanvas(
   canvas: HTMLCanvasElement,
-  history: History,
+  result: ConvertResult,
   palette: ColorPalette,
   showLabels = true,
   highlightId: ColorId | null = null,
 ): HTMLCanvasElement {
-  const { pattern, activePalette } = history.present
+  const { pattern, activePalette } = result
   const counts = computeColorCounts(pattern, activePalette)
   const layout = buildSheetLayout(pattern.width, pattern.height, {
     cellSize: CELL_SIZE,
@@ -88,14 +87,14 @@ function downloadBlob(blob: Blob, filename: string) {
 
 /** 导出图纸为 PNG：渲染到离屏 canvas 后下载。 */
 export function exportSheetPng(
-  history: History,
+  result: ConvertResult,
   palette: ColorPalette,
   filename: string,
   showLabels = true,
   highlightId: ColorId | null = null,
 ) {
   const canvas = document.createElement('canvas')
-  renderSheetToCanvas(canvas, history, palette, showLabels, highlightId)
+  renderSheetToCanvas(canvas, result, palette, showLabels, highlightId)
   canvas.toBlob((blob) => {
     if (!blob) return
     downloadBlob(blob, filename)
@@ -104,13 +103,13 @@ export function exportSheetPng(
 
 /** 生成图纸 PDF（等比缩放适配一页），导出与分享共用。 */
 function buildSheetPdf(
-  history: History,
+  result: ConvertResult,
   palette: ColorPalette,
   showLabels: boolean,
   highlightId: ColorId | null,
 ): jsPDF {
   const canvas = document.createElement('canvas')
-  renderSheetToCanvas(canvas, history, palette, showLabels, highlightId)
+  renderSheetToCanvas(canvas, result, palette, showLabels, highlightId)
   const pdf = new jsPDF({ orientation: canvas.width > canvas.height ? 'landscape' : 'portrait' })
   const pageW = pdf.internal.pageSize.getWidth()
   const pageH = pdf.internal.pageSize.getHeight()
@@ -125,18 +124,18 @@ function buildSheetPdf(
 
 /** 导出图纸为 PDF：生成 PDF 并下载。 */
 export function exportSheetPdf(
-  history: History,
+  result: ConvertResult,
   palette: ColorPalette,
   filename: string,
   showLabels = true,
   highlightId: ColorId | null = null,
 ) {
-  buildSheetPdf(history, palette, showLabels, highlightId).save(filename)
+  buildSheetPdf(result, palette, showLabels, highlightId).save(filename)
 }
 
 /** 分享图纸（PNG/PDF）：优先 Web Share API，不支持时降级为下载。与导出共用 renderSheetToCanvas。 */
 export async function shareSheet(
-  history: History,
+  result: ConvertResult,
   palette: ColorPalette,
   filename: string,
   showLabels = true,
@@ -145,10 +144,10 @@ export async function shareSheet(
 ): Promise<void> {
   let blob: Blob
   if (format === 'pdf') {
-    blob = buildSheetPdf(history, palette, showLabels, highlightId).output('blob')
+    blob = buildSheetPdf(result, palette, showLabels, highlightId).output('blob')
   } else {
     const canvas = document.createElement('canvas')
-    renderSheetToCanvas(canvas, history, palette, showLabels, highlightId)
+    renderSheetToCanvas(canvas, result, palette, showLabels, highlightId)
     const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
     if (!pngBlob) return
     blob = pngBlob

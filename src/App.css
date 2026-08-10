@@ -54,8 +54,7 @@
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
 }
 
-.btn:hover,
-.tool-btn:hover {
+.btn:hover {
   border-color: var(--ink-dim);
 }
 
@@ -78,36 +77,6 @@
 .btn-primary:hover {
   background: #f5e45c;
   border-color: transparent;
-}
-
-/* ── 工具条（珠子按钮） ───────────────── */
-
-.toolbar {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--line);
-}
-
-.tool-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--line);
-  background: transparent;
-  border-radius: 999px;
-  padding: 5px 14px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-
-.tool-btn.active {
-  background: var(--blue);
-  border-color: transparent;
-  color: #fff;
-  font-weight: 600;
 }
 
 /* ── 参数行 ───────────────────────────── */
@@ -133,21 +102,8 @@
   font-family: var(--font-mono);
 }
 
-/* ── 用色集条（色号徽章） ─────────────── */
+/* ── 珠子（logo / 算色样块共用） ──────── */
 
-.palette-bar {
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--line);
-}
-
-.palette-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-
-/* 珠子：圆角 + 内高光，模拟体积 */
 .bead {
   width: 20px;
   height: 20px;
@@ -157,41 +113,6 @@
     inset 0 2px 2px rgba(255, 255, 255, 0.35),
     inset 0 -2px 3px rgba(0, 0, 0, 0.3);
   padding: 0;
-  cursor: pointer;
-  transition: transform 0.1s ease;
-}
-
-.bead:hover {
-  transform: scale(1.12);
-}
-
-.bead.selected {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.bead-more {
-  border: 1px dashed var(--ink-dim);
-  background: transparent;
-  border-radius: 6px;
-  width: 20px;
-  height: 20px;
-  cursor: pointer;
-  color: var(--ink-dim);
-}
-
-.palette-all {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
-
-.palette-all .bead {
-  width: 16px;
-  height: 16px;
 }
 
 /* ── 画布（钉板工作台） ───────────────── */
@@ -377,9 +298,7 @@
   .canvas-wrap canvas {
     animation: none;
   }
-  .btn,
-  .tool-btn,
-  .bead {
+  .btn {
     transition: none;
   }
 }
