@@ -59,24 +59,108 @@ function resample(image: SourceImage, width: number, height: number): RGB[] {
 }
 
 /**
+ * 用色数限制：把当前用量最少的色号合并到与其最近的剩余色号，
+ * 直到用色数不超过 maxColors。返回保留的色号集合（按色板顺序）。
+ */
+function enforceMaxColors(cells: ColorId[], maxColors: number, palette: ColorPalette): Set<ColorId> {
+  const retained = new Set(cells)
+  while (retained.size > maxColors) {
+    let leastId: ColorId | null = null
+    let leastCount = Number.POSITIVE_INFINITY
+    for (const id of retained) {
+      const count = cells.filter((c) => c === id).length
+      if (count < leastCount) {
+        leastCount = count
+        leastId = id
+      }
+    }
+    if (leastId === null) break
+    const nearest = nearestColorId(
+      palette.find((e) => e.id === leastId)!.rgb,
+      palette.filter((e) => e.id !== leastId),
+    )
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i] === leastId) cells[i] = nearest
+    }
+    retained.delete(leastId)
+  }
+  return retained
+}
+
+/** 抖动 + 量化：Floyd-Steinberg 误差扩散。 */
+function ditherAndQuantize(sampled: RGB[], width: number, height: number, palette: ColorPalette): ColorId[] {
+  const total = width * height
+  const err = new Array<RGB>(total)
+  for (let i = 0; i < total; i++) err[i] = { r: 0, g: 0, b: 0 }
+  const cells: ColorId[] = []
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x
+      const base = sampled[idx]
+      const q = {
+        r: base.r + Math.round(err[idx].r),
+        g: base.g + Math.round(err[idx].g),
+        b: base.b + Math.round(err[idx].b),
+      }
+      const id = nearestColorId(q, palette)
+      cells.push(id)
+      const chosen = palette.find((e) => e.id === id)!.rgb
+      const diff = {
+        r: q.r - chosen.r,
+        g: q.g - chosen.g,
+        b: q.b - chosen.b,
+      }
+      const right = idx + 1
+      const down = idx + width
+      const downLeft = idx + width - 1
+      const downRight = idx + width + 1
+      const add = (target: number, f: number) => {
+        if (target >= 0 && target < total) {
+          err[target].r += (diff.r * f) / 16
+          err[target].g += (diff.g * f) / 16
+          err[target].b += (diff.b * f) / 16
+        }
+      }
+      if (x + 1 < width) add(right, 7)
+      if (y + 1 < height) {
+        if (x > 0) add(downLeft, 3)
+        add(down, 5)
+        if (x + 1 < width) add(downRight, 1)
+      }
+    }
+  }
+  return cells
+}
+
+/**
  * 图片转图案（核心转换管线）。
- * ticket 01：固定参数，最近邻量化，不做用色数限制和抖动。
- * maxColors / dithering 留给 ticket 02 实现。
+ * maxColors：用色数限制（按色板顺序保留，超出时合并最少色到最近色）。
+ * dithering：默认关；开启时用 Floyd-Steinberg 误差扩散。
  */
 export function convertImageToPattern(
   image: SourceImage,
   params: ConvertParams,
   palette: ColorPalette,
 ): ConvertResult {
-  const { width, height } = params
+  const { width, height, maxColors, dithering = false } = params
   const sampled = resample(image, width, height)
-  const cells = sampled.map((rgb) => nearestColorId(rgb, palette))
+  let cells: ColorId[]
+  if (dithering) {
+    cells = ditherAndQuantize(sampled, width, height, palette)
+  } else {
+    cells = sampled.map((rgb) => nearestColorId(rgb, palette))
+  }
+
+  let retained: Set<ColorId>
+  if (maxColors !== undefined && maxColors < cells.length) {
+    retained = enforceMaxColors(cells, maxColors, palette)
+  } else {
+    retained = new Set(cells)
+  }
 
   const pattern: Pattern = { width, height, cells }
-
-  const usedSet = new Set(cells)
   const activePalette: ColorId[] = palette
-    .filter((entry) => usedSet.has(entry.id))
+    .filter((entry) => retained.has(entry.id))
     .map((entry) => entry.id)
 
   const colorCounts = new Map<ColorId, number>()
