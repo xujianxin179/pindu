@@ -45,10 +45,13 @@ function nearestColorId(target: RGB, palette: ColorPalette): ColorId {
 
 /**
  * 重采样到 width×height 网格，同时按源图像素级背景 mask 判定背景，输出每格平均色与背景 mask。
- * bgMask 非空（1=背景像素）时：一格内背景像素数 >= 非背景像素数（含平局）则该格判为背景
- * （mask=true）；否则该格 RGB 只取非背景像素的平均，避免背景稀释交界格颜色
- * （旧实现先整体平均再判背景，会在主体边缘残留背景色）。
- * bgMask 为空时：mask 全 false，每格取覆盖区域全像素平均（box filter）。
+ * bgMask 非空时（1=外部背景，2=内部细节洞）：一格内背景像素（值 1）数 >=
+ * 非背景像素（0 前景 + 2 细节）数则该格判为背景（mask=true）；否则该格 RGB
+ * 只取非背景像素的颜色（见下），避免背景稀释交界格颜色。
+ * 颜色合成：多数派投票——统计格内非背景像素中覆盖最多的颜色（精确匹配 RGB），
+ * 若多数派严格过半取该色（小特征不被平均稀释，保留细节），否则取非背景像素平均
+ * （渐变/噪声场景退化为旧 box filter 行为）。bgMask 为空时：mask 全 false，
+ * 每格取覆盖区域全像素投票/平均（box filter 语义保留）。
  */
 function resampleWithMask(
   image: SourceImage,
@@ -70,6 +73,9 @@ function resampleWithMask(
       let g = 0
       let b = 0
       let count = 0
+      // 多数派投票：精确 RGB -> 覆盖数
+      const votes = new Map<string, { rgb: RGB; n: number }>()
+      const voteKey = (rgb: RGB) => `${rgb.r},${rgb.g},${rgb.b}`
       for (let y = yStart; y < yEnd; y++) {
         for (let x = xStart; x < xEnd; x++) {
           const p = pixels[y * sw + x]
@@ -80,6 +86,10 @@ function resampleWithMask(
             g += p.g
             b += p.b
             count++
+            const k = voteKey(p)
+            const e = votes.get(k)
+            if (e) e.n++
+            else votes.set(k, { rgb: p, n: 1 })
           }
         }
       }
@@ -87,13 +97,24 @@ function resampleWithMask(
         // 背景像素占多数（含平局 / 全背景）-> 判背景；占位色用背景近似，该格后续置 null
         mask.push(true)
         sampled.push({ r: 0, g: 0, b: 0 })
-      } else {
+      } else if (count > 0) {
+        // 多数派严格过半 -> 取该色（细节保留）；否则平均（渐变/平局退化）
+        const total = bgMask ? bgCount + count : count
+        const winner = [...votes.values()].sort((a, b) => b.n - a.n)[0]
+        if (winner && winner.n > total / 2) {
+          sampled.push(winner.rgb)
+        } else {
+          sampled.push({
+            r: Math.round(r / count),
+            g: Math.round(g / count),
+            b: Math.round(b / count),
+          })
+        }
         mask.push(false)
-        sampled.push({
-          r: Math.round(r / count),
-          g: Math.round(g / count),
-          b: Math.round(b / count),
-        })
+      } else {
+        // 全背景（count=0）：判背景
+        mask.push(true)
+        sampled.push({ r: 0, g: 0, b: 0 })
       }
     }
   }

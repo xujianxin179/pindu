@@ -56,6 +56,64 @@ describe('convertImageToPattern', () => {
     expect(result.pattern.cells).toEqual(['R', 'R', 'R', 'R'])
   })
 
+  it('一格内混合颜色时，取覆盖最多的颜色（多数派），小特征不被平均稀释', () => {
+    // 2x1 -> 1x1：60% 红 + 40% 白，平均 (255,102,102) 会量化成粉/白；
+    // 多数派投票选红 -> 保留红特征
+    const p: ColorPalette = [
+      { id: 'W', name: '白', rgb: { r: 255, g: 255, b: 255 } },
+      { id: 'R', name: '红', rgb: { r: 255, g: 0, b: 0 } },
+      { id: 'P', name: '粉', rgb: { r: 255, g: 100, b: 100 } },
+    ]
+    const image: SourceImage = {
+      width: 10,
+      height: 1,
+      pixels: [
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 1, height: 1, removeBackground: false },
+      p,
+    )
+    expect(result.pattern.cells).toEqual(['R'])
+  })
+
+  it('平局（各占一半）取平均色，避免投票漂移', () => {
+    // 2x2 -> 1x1：2 红 + 2 白，平局取平均 (255,128,128) -> 粉
+    const p: ColorPalette = [
+      { id: 'W', name: '白', rgb: { r: 255, g: 255, b: 255 } },
+      { id: 'P', name: '粉', rgb: { r: 255, g: 128, b: 128 } },
+      { id: 'R', name: '红', rgb: { r: 255, g: 0, b: 0 } },
+    ]
+    const image: SourceImage = {
+      width: 2,
+      height: 2,
+      pixels: [
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 255, b: 255 },
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 1, height: 1, removeBackground: false },
+      p,
+    )
+    // 平局 -> 平均 (255,128,128) -> 粉 P
+    expect(result.pattern.cells).toEqual(['P'])
+  })
+
   it('activePalette 只含实际用到的色号，按色板顺序', () => {
     const image: SourceImage = {
       width: 2,
@@ -330,6 +388,69 @@ describe('convertImageToPattern 去背景', () => {
       bgPalette,
     )
     expect(result.pattern.cells).toEqual(['W'])
+  })
+
+  it('外部 mask 值 2（细节）的格子按自身颜色量化，不判背景', () => {
+    // 3x3：白底红主体，中心细节区标 2（如白色眼睛）；细节格保留颜色变珠子，其余背景 1 变 null
+    const image: SourceImage = {
+      width: 3,
+      height: 3,
+      pixels: [
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+      ],
+    }
+    // 背景 mask：1=外部背景，2=内部细节（中心）
+    const backgroundMask = new Uint8Array([
+      1, 1, 1,
+      1, 2, 1,
+      1, 1, 1,
+    ])
+    const result = convertImageToPattern(
+      image,
+      { width: 3, height: 3, removeBackground: true, backgroundMask },
+      bgPalette,
+    )
+    // 中心细节格：不判背景，按像素色量化；mask 2 与 0 都参与非背景平均
+    expect(result.pattern.cells).toEqual([
+      null, null, null,
+      null, 'R', null,
+      null, null, null,
+    ])
+    expect(result.activePalette).toEqual(['R'])
+  })
+
+  it('外部 mask 值 2 的格子与背景交界时不被背景稀释（只取非背景像素）', () => {
+    // 2x2：左上红（主体）、右下白（细节 2），一格内混合时背景 1 不参与平均
+    const image: SourceImage = {
+      width: 2,
+      height: 2,
+      pixels: [
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+      ],
+    }
+    const backgroundMask = new Uint8Array([
+      0, 1,
+      1, 2,
+    ])
+    const result = convertImageToPattern(
+      image,
+      { width: 2, height: 2, removeBackground: true, backgroundMask },
+      bgPalette,
+    )
+    // 细节格(1,1)：白（细节色），非 null、非 R；activePalette 按色板顺序（白在前）
+    expect(result.pattern.cells).toEqual(['R', null, null, 'W'])
+    expect(result.activePalette).toEqual(['W', 'R'])
   })
 
   it('全背景图 + maxColors：activePalette 为空、所有格为 null', () => {

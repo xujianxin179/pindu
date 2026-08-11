@@ -50,10 +50,11 @@ export function binarizeToBackgroundMask(prob: Float32Array, threshold: number):
 
 /**
  * 空洞填充：把"不与图像边缘连通的背景区域"按面积处理。
- * 边缘连通背景（真实外围背景）一律保留；
+ * 边缘连通背景（真实外围背景）一律保留为 1；
  * 内部洞（被前景包围的背景区域）：面积 >= minArea 的填为前景（0），
- * 面积 < minArea 的保留为背景（1）——小洞是主体细节（眼睛/花纹/文字），
- * 大洞才是误判镂空。minArea=0 时所有洞都填。从边缘背景像素做 BFS 连通域，
+ * 面积 < minArea 的标记为细节（2）——小洞是主体细节（眼睛/花纹/文字），
+ * 大洞才是误判镂空。输出三态 mask：0=前景、1=外部背景、2=内部细节洞。
+ * minArea=0 时所有洞都填（退化为二态）。从边缘背景像素做 BFS 连通域，
  * 原地返回新 mask，输入不变。
  */
 export function fillBackgroundHoles(
@@ -73,7 +74,7 @@ export function fillBackgroundHoles(
   const push = (i: number) => {
     queue[tail++] = i
   }
-  // 阶段 1：从四条边上的背景像素 BFS，标记并保留边缘连通背景
+  // 阶段 1：从四条边上的背景像素 BFS，标记并保留边缘连通背景（1）
   for (let x = 0; x < width; x++) {
     if (mask[x] === 1) push(x)
     if (mask[(height - 1) * width + x] === 1) push((height - 1) * width + x)
@@ -97,7 +98,7 @@ export function fillBackgroundHoles(
     if (y > 0) tryPush(idx - width)
     if (y < height - 1) tryPush(idx + width)
   }
-  // 阶段 2：每个内部洞 BFS 计数（复用 queue），按面积决定填/保留
+  // 阶段 2：每个内部洞 BFS 计数（复用 queue），按面积决定填（0）/细节（2）
   for (let i = 0; i < mask.length; i++) {
     if (mask[i] === 1 && !visited[i]) {
       head = 0
@@ -120,8 +121,8 @@ export function fillBackgroundHoles(
         if (y < height - 1) tryPush(idx + width)
       }
       if (tail < minArea) {
-        // 小洞：保留为背景（细节）；大洞：out 保持 0（已填）
-        for (let k = 0; k < tail; k++) out[queue[k]] = 1
+        // 小洞：标记为细节（2），转换时按自身颜色量化成珠子；大洞：out 保持 0（已填）
+        for (let k = 0; k < tail; k++) out[queue[k]] = 2
       }
     }
   }

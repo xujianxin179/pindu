@@ -80,7 +80,7 @@ function preprocess(image: SourceImage): Float32Array {
 }
 
 /**
- * AI 智能抠图：返回源图像素级背景 mask（Uint8Array，1=背景）。
+ * AI 智能抠图：返回源图像素级三态背景 mask（0=前景，1=外部背景→空格，2=内部细节洞→珠子颜色）。
  * 模型推理（wasm）在异步线程执行，首次调用需加载模型（~4.5MB，之后缓存复用）。
  * 结果按图内容缓存：同一张图重复调用（如切换抠图模式）直接返回缓存，不再推理。
  * 失败（模型加载失败等）也缓存为 'failed'，避免每次切换都重试。
@@ -105,8 +105,8 @@ export async function generateBackgroundMask(image: SourceImage): Promise<Uint8A
     const upsampled = upsampleMask(prob, INPUT_SIZE, INPUT_SIZE, image.width, image.height)
     const binarized = binarizeToBackgroundMask(upsampled, THRESHOLD)
     // 空洞填充：AI 在主体内部产生的孤立背景区域按面积处理——大面积误判镂空
-    // 翻转为前景（保证图案整体连通），小面积保留为细节（u2netp 对主体内与
-    // 背景同色的细节区易漏标，全填会丢失眼睛/花纹等特征）
+    // 翻转为前景（0，保证图案整体连通），小面积标记为细节（2，转换时按自身
+    // 颜色量化成珠子，u2netp 对主体内与背景同色的细节区易漏标）
     const mask = fillBackgroundHoles(
       binarized,
       image.width,
