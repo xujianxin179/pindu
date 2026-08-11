@@ -162,7 +162,8 @@ function WorkspacePanel({
 
 function App() {
   const [image, setImage] = useState<SourceImage | null>(null)
-  const [longSide, setLongSide] = useState<number | ''>(DEFAULT_LONG_SIDE)
+  const [gridWidth, setGridWidth] = useState<number | ''>('')
+  const [gridHeight, setGridHeight] = useState<number | ''>('')
   const [maxColors, setMaxColors] = useState<number | ''>(DEFAULT_MAX_COLORS)
   const [removeBackground, setRemoveBackground] = useState(true)
   const [result, setResult] = useState<ConvertResult | null>(null)
@@ -184,20 +185,23 @@ function App() {
   }
 
   useEffect(() => {
-    if (!image || longSide === '' || maxColors === '') return
-    const size = computeGridSize(image, longSide)
+    if (!image || gridWidth === '' || gridHeight === '' || maxColors === '') return
     const r = convertImageToPattern(
       image,
-      { ...size, maxColors, removeBackground },
+      { width: gridWidth, height: gridHeight, maxColors, removeBackground },
       MARD_PALETTE,
     )
     setResult(r)
-  }, [image, longSide, maxColors, removeBackground])
+  }, [image, gridWidth, gridHeight, maxColors, removeBackground])
 
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     const img = await fileToSourceImage(file)
+    // 导入图片时按长边 DEFAULT_LONG_SIDE 给宽高一个初值，用户可再分别调整
+    const size = computeGridSize(img, DEFAULT_LONG_SIDE)
+    setGridWidth(size.width)
+    setGridHeight(size.height)
     setImage(img)
   }
 
@@ -274,14 +278,25 @@ function App() {
 
       <div className="params">
         <label className="param-field">
-          长边珠数
+          宽
           <input
             type="number"
             min={1}
             max={200}
-            value={longSide}
+            value={gridWidth}
             placeholder="40"
-            onChange={(e) => setLongSide(e.target.value === '' ? '' : Number(e.target.value))}
+            onChange={(e) => setGridWidth(e.target.value === '' ? '' : Number(e.target.value))}
+          />
+        </label>
+        <label className="param-field">
+          高
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={gridHeight}
+            placeholder="40"
+            onChange={(e) => setGridHeight(e.target.value === '' ? '' : Number(e.target.value))}
           />
         </label>
         <label className="param-field">
