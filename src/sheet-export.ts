@@ -89,7 +89,7 @@ function downloadBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 5000)
 }
 
-/** 导出图纸为 PNG：渲染到离屏 canvas 后下载。用同步 toDataURL 保证在用户点击的手势栈内触发下载（移动端 Safari/Chrome 拦截异步下载）。 */
+/** 导出图纸为 PNG：渲染到离屏 canvas 后下载。 */
 export function exportSheetPng(
   result: ConvertResult,
   palette: ColorPalette,
@@ -98,14 +98,12 @@ export function exportSheetPng(
 ) {
   const canvas = document.createElement('canvas')
   renderSheetToCanvas(canvas, result, palette, highlightId)
-  // 同步触发下载：toBlob 回调是异步的，移动端会因失去用户手势拦截
-  const url = canvas.toDataURL('image/png')
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
+  // 用 Blob URL（非 data URL）：安卓 Chrome 对 a[download] + data URL 报
+  // "下载链接不正确"。Blob URL 兼容所有设备。
+  canvas.toBlob((blob) => {
+    if (!blob) return
+    downloadBlob(blob, filename)
+  }, 'image/png')
 }
 
 /** 生成图纸 PDF（等比缩放适配一页），导出与分享共用。 */
@@ -128,21 +126,17 @@ function buildSheetPdf(
   return pdf
 }
 
-/** 导出图纸为 PDF：生成 PDF 并下载。用同步 output('datauristring') 在用户手势内触发（移动端拦截异步下载）。 */
+/** 导出图纸为 PDF：生成 PDF 并下载。 */
 export function exportSheetPdf(
   result: ConvertResult,
   palette: ColorPalette,
   filename: string,
   highlightId: ColorId | null = null,
 ) {
+  // 用 Blob URL（非 data URL）：安卓 Chrome 对 a[download] + data URL 报
+  // "下载链接不正确"。PDF Blob 可能较大（几 MB），data URL 会撑爆内存。
   const pdf = buildSheetPdf(result, palette, highlightId)
-  const url = pdf.output('datauristring')
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
+  downloadBlob(pdf.output('blob'), filename)
 }
 
 /** 分享图纸（PNG/PDF）：优先 Web Share API，不支持时降级为下载。与导出共用 renderSheetToCanvas。 */
