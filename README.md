@@ -22,12 +22,12 @@ npm run build     # 生产构建（含 SW 预缓存）
 npm run preview   # 预览 dist
 ```
 
-部署 `dist/` 到任意静态托管（需要 HTTPS 才能注册 service worker）。已配置 GitHub Actions 自动部署：push 到 master 即构建发布到 GitHub Pages。
+部署 `dist/` 到任意静态托管（需要 HTTPS 才能注册 service worker）。已配置 GitHub Actions 自动部署：push 到 master 即构建发布到 GitHub Pages，并同步部署到 Cloudflare Pages（国内备用地址）。
 
 ## iPad 使用（小白版）
 
 1. **打开网址**：iPad 的 Safari 浏览器地址栏输入
-   `https://xujianxin179.github.io/pindu/`，回车
+   `https://xujianxin179.github.io/pindu/`（国际备用）或 `https://pindu-e4w.pages.dev/`（国内更快），回车
 2. **添加到主屏幕**：点 Safari 底部的**分享按钮**（方框向上箭头）→ 往下滑点 **"添加到主屏幕"** → 右上角**添加**。桌面会出现一个 pinDu 图标，之后像 App 一样点开就能用
 3. **导入图片**：点右上角**"导入图片"** → 选相册里的照片（或拍照）
 4. **裁剪**（可选）：拖动黄色框选主体 → 点**"确认裁剪"**；不想要裁剪直接点**"不裁剪"**
