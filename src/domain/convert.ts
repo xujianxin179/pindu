@@ -43,16 +43,30 @@ function nearestColorId(target: RGB, palette: ColorPalette): ColorId {
   return bestId
 }
 
-/** 把源图片重采样到 width×height 网格，每格取覆盖区域的平均 RGB（box filter）。 */
-function resample(image: SourceImage, width: number, height: number): RGB[] {
+/**
+ * 重采样到 width×height 网格，同时按像素级判定背景，输出每格平均色与背景 mask。
+ * bg 非空时：源像素与 bg 距离 <= toleranceSq 视作背景；一格内背景像素数 >= 非背景像素数
+ * （含平局）则该格判为背景（mask=true）；否则该格 RGB 只取非背景像素的平均，
+ * 避免背景稀释交界格颜色（旧实现先整体平均再判背景，会在主体边缘残留背景色）。
+ * bg 为空时：mask 全 false，每格取覆盖区域全像素平均（box filter）。
+ */
+function resampleWithMask(
+  image: SourceImage,
+  width: number,
+  height: number,
+  bg: RGB | null,
+  toleranceSq: number,
+): { sampled: RGB[]; mask: boolean[] } {
   const { width: sw, height: sh, pixels } = image
-  const out: RGB[] = []
+  const sampled: RGB[] = []
+  const mask: boolean[] = []
   for (let gy = 0; gy < height; gy++) {
     for (let gx = 0; gx < width; gx++) {
       const xStart = Math.floor((gx * sw) / width)
       const xEnd = Math.max(xStart + 1, Math.floor(((gx + 1) * sw) / width))
       const yStart = Math.floor((gy * sh) / height)
       const yEnd = Math.max(yStart + 1, Math.floor(((gy + 1) * sh) / height))
+      let bgCount = 0
       let r = 0
       let g = 0
       let b = 0
@@ -60,20 +74,31 @@ function resample(image: SourceImage, width: number, height: number): RGB[] {
       for (let y = yStart; y < yEnd; y++) {
         for (let x = xStart; x < xEnd; x++) {
           const p = pixels[y * sw + x]
-          r += p.r
-          g += p.g
-          b += p.b
-          count++
+          if (bg && colorDist(p, bg) <= toleranceSq) {
+            bgCount++
+          } else {
+            r += p.r
+            g += p.g
+            b += p.b
+            count++
+          }
         }
       }
-      out.push({
-        r: Math.round(r / count),
-        g: Math.round(g / count),
-        b: Math.round(b / count),
-      })
+      if (bg && bgCount >= count) {
+        // 背景像素占多数（含平局 / 全背景）-> 判背景；占位色用 bg，该格后续置 null
+        mask.push(true)
+        sampled.push(bg)
+      } else {
+        mask.push(false)
+        sampled.push({
+          r: Math.round(r / count),
+          g: Math.round(g / count),
+          b: Math.round(b / count),
+        })
+      }
     }
   }
-  return out
+  return { sampled, mask }
 }
 
 /**
@@ -136,31 +161,22 @@ export function convertImageToPattern(
   palette: ColorPalette,
 ): ConvertResult {
   const { width, height, maxColors, removeBackground = true } = params
-  const sampled = resample(image, width, height)
   const bg = removeBackground ? dominantEdgeColor(image) : null
-
-  // 先去背景：与背景接近的格子在选色/量化前就置空，不占用用色数预算
-  let backgroundMask: boolean[] | null
-  if (bg) {
-    backgroundMask = sampled.map((rgb) => colorDist(rgb, bg) <= BG_TOLERANCE_SQ)
-  } else {
-    backgroundMask = null
-  }
+  // 重采样同时按像素级判背景：交界格只取非背景像素平均，背景占多数则置空
+  const { sampled, mask } = resampleWithMask(image, width, height, bg, BG_TOLERANCE_SQ)
 
   let retained: Set<ColorId | null>
   let cells: (ColorId | null)[]
   if (maxColors !== undefined) {
     // 用色数选择只统计非背景格
     const initial = sampled
-      .map((rgb, i) => (backgroundMask?.[i] ? null : nearestColorId(rgb, palette)))
+      .map((rgb, i) => (mask[i] ? null : nearestColorId(rgb, palette)))
       .filter((id): id is ColorId => id !== null)
     retained = selectRetained(initial, maxColors, palette)
     const subsetPalette = palette.filter((e) => retained.has(e.id))
-    cells = sampled.map((rgb, i) =>
-      backgroundMask?.[i] ? null : nearestColorId(rgb, subsetPalette),
-    )
+    cells = sampled.map((rgb, i) => (mask[i] ? null : nearestColorId(rgb, subsetPalette)))
   } else {
-    cells = sampled.map((rgb, i) => (backgroundMask?.[i] ? null : nearestColorId(rgb, palette)))
+    cells = sampled.map((rgb, i) => (mask[i] ? null : nearestColorId(rgb, palette)))
     retained = new Set(cells)
   }
 
@@ -172,7 +188,7 @@ export function convertImageToPattern(
   return { pattern, activePalette }
 }
 
-/** 背景判定容差（RGB 欧氏距离平方）：与背景色差 <= 30 视作背景。 */
+/** 背景判定容差（RGB 欧氏距离平方）：源像素与背景色差 <= 30 视作背景像素。 */
 const BG_TOLERANCE_SQ = 30 * 30
 
 function colorDist(a: RGB, b: RGB): number {

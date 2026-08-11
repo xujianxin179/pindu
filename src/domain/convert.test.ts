@@ -304,4 +304,85 @@ describe('convertImageToPattern 去背景', () => {
     expect(result.pattern.cells).toEqual([null, 'R', null, 'R'])
     expect(result.activePalette).toEqual(['R'])
   })
+
+  it('交界格背景像素占多数时判为空格，不残留背景色', () => {
+    // 2x1 -> 1x1：单格覆盖 1 白(背景) + 1 红(主体)，背景占半 -> 判空格。
+    // 旧实现先求平均 (255,128,128) 会量化成白珠，在交界处残留背景色。
+    const image: SourceImage = {
+      width: 2,
+      height: 1,
+      pixels: [
+        { r: 255, g: 255, b: 255 }, // 白背景
+        { r: 255, g: 0, b: 0 }, // 红主体
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 1, height: 1, removeBackground: true },
+      bgPalette,
+    )
+    expect(result.pattern.cells).toEqual([null])
+    expect(result.activePalette).toEqual([])
+  })
+
+  it('交界格主体像素占多数时，只取主体像素平均，量化为纯主体色（不被背景稀释）', () => {
+    // 4x4 -> 2x2：右下格覆盖 1 白(背景) + 3 红(主体)。
+    // 旧实现求平均 (255,64,64) 会量化成粉色（白红之间的稀释色，像残留背景）；
+    // 新实现只取 3 个红像素的平均 (255,0,0) -> 纯红。
+    const p: ColorPalette = [
+      { id: 'W', name: '白', rgb: { r: 255, g: 255, b: 255 } },
+      { id: 'P', name: '粉', rgb: { r: 255, g: 100, b: 100 } },
+      { id: 'R', name: '红', rgb: { r: 255, g: 0, b: 0 } },
+    ]
+    const W = { r: 255, g: 255, b: 255 }
+    const R = { r: 255, g: 0, b: 0 }
+    const image: SourceImage = {
+      width: 4,
+      height: 4,
+      pixels: [
+        W, W, W, W,
+        W, W, W, W,
+        W, W, W, R,
+        W, W, R, R,
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 2, height: 2, removeBackground: true },
+      p,
+    )
+    // 前 3 格全白 -> null；右下格 1白3红 -> 主体占多数，取红像素平均 -> R
+    expect(result.pattern.cells).toEqual([null, null, null, 'R'])
+    expect(result.activePalette).toEqual(['R'])
+  })
+
+  it('maxColors + 交界格：主体占多数的交界格纯主体色参与选色并保留', () => {
+    // 4x4 -> 2x2，右下格 1白3红（主体占多数 -> 纯红平均 (255,0,0)）。
+    // maxColors=1：initial=[R]，selectRetained 选 R；右下格在 {R} 子集量化为 R。
+    // 旧实现平均 (255,64,64) 进 initial 会量化成粉 P，maxColors=1 选 P -> 丢失红。
+    const p: ColorPalette = [
+      { id: 'W', name: '白', rgb: { r: 255, g: 255, b: 255 } },
+      { id: 'P', name: '粉', rgb: { r: 255, g: 100, b: 100 } },
+      { id: 'R', name: '红', rgb: { r: 255, g: 0, b: 0 } },
+    ]
+    const W = { r: 255, g: 255, b: 255 }
+    const R = { r: 255, g: 0, b: 0 }
+    const image: SourceImage = {
+      width: 4,
+      height: 4,
+      pixels: [
+        W, W, W, W,
+        W, W, W, W,
+        W, W, W, R,
+        W, W, R, R,
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 2, height: 2, maxColors: 1, removeBackground: true },
+      p,
+    )
+    expect(result.pattern.cells).toEqual([null, null, null, 'R'])
+    expect(result.activePalette).toEqual(['R'])
+  })
 })
