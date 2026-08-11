@@ -345,7 +345,8 @@ function App() {
   const [gridWidth, setGridWidth] = useState<number | ''>('')
   const [gridHeight, setGridHeight] = useState<number | ''>('')
   const [maxColors, setMaxColors] = useState<number | ''>(DEFAULT_MAX_COLORS)
-  const [removeBackground, setRemoveBackground] = useState(true)
+  /** 抠图方式：'ai'=AI 语义分割（失败回退颜色检测），'color'=颜色检测（flood fill），'off'=不抠图 */
+  const [bgMode, setBgMode] = useState<'ai' | 'color' | 'off'>('ai')
   /** AI 抠图背景 mask（源图像素级，1=背景）；null=未生成（等待中），'failed'=AI 失败（回退颜色检测） */
   const [bgMask, setBgMask] = useState<Uint8Array | 'failed' | null>(null)
   const [result, setResult] = useState<ConvertResult | null>(null)
@@ -368,10 +369,10 @@ function App() {
     setWorks(await storeRef.current!.list())
   }
 
-  /** AI 智能抠图：activeImage 变化（导入/裁剪确认）后异步生成背景 mask。 */
+  /** AI 智能抠图：activeImage 变化（导入/裁剪确认）后异步生成背景 mask。仅 bgMode='ai' 时执行。 */
   useEffect(() => {
     setBgMask(null)
-    if (!activeImage || cropMode || !removeBackground) return
+    if (!activeImage || cropMode || bgMode !== 'ai') return
     // 重新抠图中：清掉旧结果，避免等待期显示过期图案（含错位 mask 的错误帧）
     setResult(null)
     let cancelled = false
@@ -386,11 +387,12 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [activeImage, cropMode, removeBackground])
+  }, [activeImage, cropMode, bgMode])
 
   useEffect(() => {
     if (!activeImage || cropMode || gridWidth === '' || gridHeight === '' || maxColors === '') return
-    if (removeBackground && bgMask === null) return // AI 抠图中，生成后再转换
+    if (bgMode === 'ai' && bgMask === null) return // AI 抠图中，生成后再转换
+    const removeBackground = bgMode !== 'off'
     const r = convertImageToPattern(
       activeImage,
       {
@@ -398,16 +400,20 @@ function App() {
         height: gridHeight,
         maxColors,
         removeBackground,
-        // AI 失败（'failed'）或 mask 与图不匹配（防御错位）时不传，回退 flood fill
+        // AI 模式传外部 mask（失败 'failed' / 等待中 null / 与图不匹配时不传，回退内部 flood fill）；
+        // 颜色模式不传（内部 flood fill），不抠图时 removeBackground=false
         backgroundMask:
-          bgMask === 'failed' || bgMask === null || bgMask.length !== activeImage.pixels.length
-            ? undefined
-            : bgMask,
+          bgMode === 'ai' &&
+          bgMask !== 'failed' &&
+          bgMask !== null &&
+          bgMask.length === activeImage.pixels.length
+            ? bgMask
+            : undefined,
       },
       MARD_PALETTE,
     )
     setResult(r)
-  }, [activeImage, cropMode, gridWidth, gridHeight, maxColors, removeBackground, bgMask])
+  }, [activeImage, cropMode, gridWidth, gridHeight, maxColors, bgMode, bgMask])
 
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -551,14 +557,27 @@ function App() {
             onChange={(e) => setMaxColors(e.target.value === '' ? '' : Number(e.target.value))}
           />
         </label>
-        <label className="param-field">
-          <input
-            type="checkbox"
-            checked={removeBackground}
-            onChange={(e) => setRemoveBackground(e.target.checked)}
-          />
-          去背景
-        </label>
+        <span className="param-field">
+          抠图
+          {(
+            [
+              ['ai', '智能抠图'],
+              ['color', '去背景'],
+              ['off', '不抠图'],
+            ] as const
+          ).map(([value, label]) => (
+            <label key={value}>
+              <input
+                type="radio"
+                name="bg-mode"
+                value={value}
+                checked={bgMode === value}
+                onChange={() => setBgMode(value)}
+              />
+              {label}
+            </label>
+          ))}
+        </span>
         <label className="param-field">
           <input
             type="checkbox"
@@ -653,7 +672,7 @@ function App() {
 
           {!result && (
             <div className="canvas-wrap">
-              {removeBackground && activeImage && bgMask === null ? (
+              {bgMode === 'ai' && activeImage && bgMask === null ? (
                 <p className="empty">正在智能抠图中…</p>
               ) : (
                 <p className="empty">从右上角导入一张图片，开始拼豆。</p>
