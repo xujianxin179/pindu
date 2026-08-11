@@ -3,7 +3,7 @@ import {
   convertImageToPattern,
   computeColorCounts,
   cropImageToSourceImage,
-  dominantEdgeColor,
+  floodFillBackgroundMask,
 } from './convert'
 import type { ColorPalette, Pattern, SourceImage } from './types'
 
@@ -181,35 +181,104 @@ describe('computeColorCounts', () => {
   })
 })
 
-describe('dominantEdgeColor（边缘主色检测）', () => {
-  it('返回边缘像素的众数色', () => {
-    // 4x4：边缘 12 格白色、中心 4 格红色
-    const pixels = Array.from({ length: 16 }, () => ({ r: 255, g: 255, b: 255 }))
-    pixels[5] = { r: 255, g: 0, b: 0 }
-    pixels[6] = { r: 255, g: 0, b: 0 }
-    pixels[9] = { r: 255, g: 0, b: 0 }
-    pixels[10] = { r: 255, g: 0, b: 0 }
-    const image: SourceImage = { width: 4, height: 4, pixels }
-    expect(dominantEdgeColor(image)).toEqual({ r: 255, g: 255, b: 255 })
+describe('floodFillBackgroundMask（连通域背景检测）', () => {
+  const W = { r: 255, g: 255, b: 255 }
+  const R = { r: 255, g: 0, b: 0 }
+  const B = { r: 0, g: 0, b: 255 }
+
+  it('从四边向内生长：与边缘连通的相似色判为背景，主体保留', () => {
+    // 3x3：边缘白、中心红。mask：白 1、红 0
+    const image: SourceImage = {
+      width: 3,
+      height: 3,
+      pixels: [W, W, W, W, R, W, W, W, W],
+    }
+    expect([...floodFillBackgroundMask(image, 30 * 30)]).toEqual([
+      1, 1, 1,
+      1, 0, 1,
+      1, 1, 1,
+    ])
   })
 
-  it('纯色图返回该色', () => {
+  it('主体内部与背景同色的区域被主体色包围，不连通，保留为前景', () => {
+    // 5x5：白背景、红主体 3x3、主体中心 1 个白洞。
+    // 洞与边缘不连通（邻居全红，色差 255 > 30），不会被抠掉。
+    const image: SourceImage = {
+      width: 5,
+      height: 5,
+      pixels: [
+        W, W, W, W, W,
+        W, R, R, R, W,
+        W, R, W, R, W,
+        W, R, R, R, W,
+        W, W, W, W, W,
+      ],
+    }
+    const mask = floodFillBackgroundMask(image, 30 * 30)
+    expect(mask[12]).toBe(0) // 洞：保留
+    expect(mask[6]).toBe(0) // 主体：保留
+    expect(mask[0]).toBe(1) // 背景：抠除
+    expect(mask[10]).toBe(1) // 背景：抠除
+  })
+
+  it('贴边主体与边缘主色差大，不会被吞掉', () => {
+    // 4x4：上 3 行白背景、下 1 行红主体贴底边。边缘主色为白（8 白 4 红），
+    // 红主体与基准色差大，不是种子也不连通 → 保留。
+    const image: SourceImage = {
+      width: 4,
+      height: 4,
+      pixels: [
+        W, W, W, W,
+        W, W, W, W,
+        W, W, W, W,
+        R, R, R, R,
+      ],
+    }
+    expect([...floodFillBackgroundMask(image, 30 * 30)]).toEqual([
+      1, 1, 1, 1,
+      1, 1, 1, 1,
+      1, 1, 1, 1,
+      0, 0, 0, 0,
+    ])
+  })
+
+  it('多色背景只抠与边缘主色连通的色块，其余颜色保留', () => {
+    // 2x3：左列白、右列蓝，平局取先出现的白为主色。蓝列与白列色差 > 30 不连通 → 保留。
+    const image: SourceImage = {
+      width: 2,
+      height: 3,
+      pixels: [W, B, W, B, W, B],
+    }
+    expect([...floodFillBackgroundMask(image, 30 * 30)]).toEqual([
+      1, 0,
+      1, 0,
+      1, 0,
+    ])
+  })
+
+  it('渐变背景：相邻像素色差在容差内可逐级生长，整块渐变背景抠除', () => {
+    // 1x4 渐变 0→30（每步差 √300 ≈ 17 ≤ 30）：种子为与主色相近的像素，
+    // 相邻比较可逐级连通整段。旧的"与单一基准色比较"只能抠掉一个色。
+    const image: SourceImage = {
+      width: 4,
+      height: 1,
+      pixels: [
+        { r: 0, g: 0, b: 0 },
+        { r: 10, g: 10, b: 10 },
+        { r: 20, g: 20, b: 20 },
+        { r: 30, g: 30, b: 30 },
+      ],
+    }
+    expect([...floodFillBackgroundMask(image, 30 * 30)]).toEqual([1, 1, 1, 1])
+  })
+
+  it('全背景图：全部判为背景', () => {
     const image: SourceImage = {
       width: 2,
       height: 2,
-      pixels: [
-        { r: 0, g: 0, b: 0 },
-        { r: 0, g: 0, b: 0 },
-        { r: 0, g: 0, b: 0 },
-        { r: 0, g: 0, b: 0 },
-      ],
+      pixels: [W, W, W, W],
     }
-    expect(dominantEdgeColor(image)).toEqual({ r: 0, g: 0, b: 0 })
-  })
-
-  it('极小图（1x1）不抛错', () => {
-    const image: SourceImage = { width: 1, height: 1, pixels: [{ r: 1, g: 2, b: 3 }] }
-    expect(dominantEdgeColor(image)).toEqual({ r: 1, g: 2, b: 3 })
+    expect([...floodFillBackgroundMask(image, 30 * 30)]).toEqual([1, 1, 1, 1])
   })
 })
 
@@ -389,6 +458,37 @@ describe('convertImageToPattern 去背景', () => {
     )
     expect(result.pattern.cells).toEqual([null, null, null, 'R'])
     expect(result.activePalette).toEqual(['R'])
+  })
+
+  it('主体内与背景同色的洞保留为原色珠，不抠成空格', () => {
+    // 5x5：白背景、红主体 3x3、主体中心 1 个白洞。
+    // 洞与边缘不连通 → 保留并量化为白珠 W；旧的颜色判定会把它抠成 null。
+    const W = { r: 255, g: 255, b: 255 }
+    const R = { r: 255, g: 0, b: 0 }
+    const image: SourceImage = {
+      width: 5,
+      height: 5,
+      pixels: [
+        W, W, W, W, W,
+        W, R, R, R, W,
+        W, R, W, R, W,
+        W, R, R, R, W,
+        W, W, W, W, W,
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 5, height: 5, removeBackground: true },
+      bgPalette,
+    )
+    expect(result.pattern.cells).toEqual([
+      null, null, null, null, null,
+      null, 'R', 'R', 'R', null,
+      null, 'R', 'W', 'R', null,
+      null, 'R', 'R', 'R', null,
+      null, null, null, null, null,
+    ])
+    expect(result.activePalette).toEqual(['W', 'R'])
   })
 })
 

@@ -44,18 +44,17 @@ function nearestColorId(target: RGB, palette: ColorPalette): ColorId {
 }
 
 /**
- * 重采样到 width×height 网格，同时按像素级判定背景，输出每格平均色与背景 mask。
- * bg 非空时：源像素与 bg 距离 <= toleranceSq 视作背景；一格内背景像素数 >= 非背景像素数
- * （含平局）则该格判为背景（mask=true）；否则该格 RGB 只取非背景像素的平均，
- * 避免背景稀释交界格颜色（旧实现先整体平均再判背景，会在主体边缘残留背景色）。
- * bg 为空时：mask 全 false，每格取覆盖区域全像素平均（box filter）。
+ * 重采样到 width×height 网格，同时按源图像素级背景 mask 判定背景，输出每格平均色与背景 mask。
+ * bgMask 非空（1=背景像素）时：一格内背景像素数 >= 非背景像素数（含平局）则该格判为背景
+ * （mask=true）；否则该格 RGB 只取非背景像素的平均，避免背景稀释交界格颜色
+ * （旧实现先整体平均再判背景，会在主体边缘残留背景色）。
+ * bgMask 为空时：mask 全 false，每格取覆盖区域全像素平均（box filter）。
  */
 function resampleWithMask(
   image: SourceImage,
   width: number,
   height: number,
-  bg: RGB | null,
-  toleranceSq: number,
+  bgMask: Uint8Array | null,
 ): { sampled: RGB[]; mask: boolean[] } {
   const { width: sw, height: sh, pixels } = image
   const sampled: RGB[] = []
@@ -74,7 +73,7 @@ function resampleWithMask(
       for (let y = yStart; y < yEnd; y++) {
         for (let x = xStart; x < xEnd; x++) {
           const p = pixels[y * sw + x]
-          if (bg && colorDist(p, bg) <= toleranceSq) {
+          if (bgMask && bgMask[y * sw + x] === 1) {
             bgCount++
           } else {
             r += p.r
@@ -84,10 +83,10 @@ function resampleWithMask(
           }
         }
       }
-      if (bg && bgCount >= count) {
-        // 背景像素占多数（含平局 / 全背景）-> 判背景；占位色用 bg，该格后续置 null
+      if (bgMask && bgCount >= count) {
+        // 背景像素占多数（含平局 / 全背景）-> 判背景；占位色用背景近似，该格后续置 null
         mask.push(true)
-        sampled.push(bg)
+        sampled.push({ r: 0, g: 0, b: 0 })
       } else {
         mask.push(false)
         sampled.push({
@@ -123,7 +122,7 @@ function selectRetained(
  * 检测背景色：取图片边缘一圈像素中"第一个出现次数最多"的颜色（背景通常在边缘，主体居中）。
  * 极小图（<2 像素宽或高）退化为一整圈采样，仍返回一个色。
  */
-export function dominantEdgeColor(image: SourceImage): RGB {
+function dominantEdgeColor(image: SourceImage): RGB {
   const { width: w, height: h, pixels } = image
   const counts = new Map<string, { rgb: RGB; n: number }>()
   const key = (rgb: RGB) => `${rgb.r},${rgb.g},${rgb.b}`
@@ -151,9 +150,53 @@ export function dominantEdgeColor(image: SourceImage): RGB {
 }
 
 /**
+ * 连通域背景检测（flood fill）：种子 = 边缘中与"边缘众数色"相近的像素（贴边主体与基准色
+ * 差大，不会被吞），从种子沿"与相邻像素色差 <= 容差"的区域向内生长，标记与边缘连通的
+ * 背景区域为 1。与纯颜色判定相比：主体内部被包围的同色区域不连通到边缘，不会被误抠；
+ * 渐变背景可沿相邻色差逐级生长。返回源图像素级 mask，与 image.pixels 行优先一一对应。
+ */
+export function floodFillBackgroundMask(image: SourceImage, toleranceSq: number): Uint8Array {
+  const { width: w, height: h, pixels } = image
+  const base = dominantEdgeColor(image)
+  const mask = new Uint8Array(pixels.length)
+  // 队列上界：每像素最多被 4 个邻居各推一次 + 边缘种子
+  const queue = new Uint32Array(pixels.length * 4 + 2 * (w + h))
+  let head = 0
+  let tail = 0
+  const push = (i: number) => {
+    queue[tail++] = i
+  }
+  // 种子：四条边中与基准色相近的像素
+  for (let x = 0; x < w; x++) {
+    if (colorDist(pixels[x], base) <= toleranceSq) push(x)
+    if (colorDist(pixels[(h - 1) * w + x], base) <= toleranceSq) push((h - 1) * w + x)
+  }
+  for (let y = 1; y < h - 1; y++) {
+    if (colorDist(pixels[y * w], base) <= toleranceSq) push(y * w)
+    if (colorDist(pixels[y * w + w - 1], base) <= toleranceSq) push(y * w + w - 1)
+  }
+  while (head < tail) {
+    const idx = queue[head++]
+    if (mask[idx]) continue
+    mask[idx] = 1
+    const x = idx % w
+    const y = (idx - x) / w
+    const from = pixels[idx]
+    const tryPush = (to: number) => {
+      if (!mask[to] && colorDist(pixels[to], from) <= toleranceSq) push(to)
+    }
+    if (x > 0) tryPush(idx - 1)
+    if (x < w - 1) tryPush(idx + 1)
+    if (y > 0) tryPush(idx - w)
+    if (y < h - 1) tryPush(idx + w)
+  }
+  return mask
+}
+
+/**
  * 图片转图案（核心转换管线）。
  * maxColors：先按"覆盖最多"选出用色子集（Active Palette），再在子集上量化；
- * removeBackground：默认开，检测边缘主色为背景色，与之接近的格子变空格（null）。
+ * removeBackground：默认开，用连通域背景检测（flood fill）把与边缘连通的背景区域变空格（null）。
  */
 export function convertImageToPattern(
   image: SourceImage,
@@ -161,9 +204,9 @@ export function convertImageToPattern(
   palette: ColorPalette,
 ): ConvertResult {
   const { width, height, maxColors, removeBackground = true } = params
-  const bg = removeBackground ? dominantEdgeColor(image) : null
-  // 重采样同时按像素级判背景：交界格只取非背景像素平均，背景占多数则置空
-  const { sampled, mask } = resampleWithMask(image, width, height, bg, BG_TOLERANCE_SQ)
+  // 源图像素级背景 mask；重采样时按 mask 判背景：交界格只取非背景像素平均，背景占多数则置空
+  const bgMask = removeBackground ? floodFillBackgroundMask(image, BG_TOLERANCE_SQ) : null
+  const { sampled, mask } = resampleWithMask(image, width, height, bgMask)
 
   let retained: Set<ColorId | null>
   let cells: (ColorId | null)[]
@@ -188,7 +231,7 @@ export function convertImageToPattern(
   return { pattern, activePalette }
 }
 
-/** 背景判定容差（RGB 欧氏距离平方）：源像素与背景色差 <= 30 视作背景像素。 */
+/** 背景连通判定容差（RGB 欧氏距离平方）：相邻像素色差 <= 30 视为同一背景区域。 */
 const BG_TOLERANCE_SQ = 30 * 30
 
 function colorDist(a: RGB, b: RGB): number {
