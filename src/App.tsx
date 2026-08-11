@@ -387,11 +387,23 @@ function App() {
     setCropMode(true) // 先手动裁剪，再去背景/转换
   }
 
-  /** 裁剪确认：rect 非空用裁剪图，null 用原图；然后进入转换。 */
+  /** 裁剪确认：rect 非空用裁剪图，null 用原图；确认裁剪后网格按新比例自适应。 */
   function onCropDone(rect: CropRect | null) {
     if (!image) return
-    setCroppedImage(rect ? cropImageToSourceImage(image, rect) : image)
+    const cropped = rect ? cropImageToSourceImage(image, rect) : image
+    setCroppedImage(cropped)
     setCropMode(false)
+    if (!rect) return
+    // 宽高自适应：保持当前长边珠数不变，短边按裁剪区域比例重新分配
+    const longSide = Math.max(
+      typeof gridWidth === 'number' ? gridWidth : 0,
+      typeof gridHeight === 'number' ? gridHeight : 0,
+    )
+    if (longSide > 0) {
+      const size = computeGridSize(cropped, longSide)
+      setGridWidth(size.width)
+      setGridHeight(size.height)
+    }
   }
 
   /** 保存当前图案为作品：续编（editingWorkId）时更新原作品，否则新建。 */
