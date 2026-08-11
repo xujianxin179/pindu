@@ -15,10 +15,16 @@ const THRESHOLD = 0.4
 /**
  * onnxruntime 的 wasm 文件路径前缀。loader 默认从脚本 URL 推断（vite 预构建后
  * 指向 node_modules，dev/prod 都会 404 拿到 HTML 导致 wasm 编译失败），
- * 显式指向 /ort-wasm/（src/ort-wasm/ 由 vite 插件 serve/复制，见 vite.config.ts；
- * 文件与 package.json 版本同步，升级 onnxruntime-web 时需重新复制 jsep 两个文件）。
+ * 显式指向 /ort-wasm/（src/ort-wasm/ 由 vite 插件 serve/复制，见 vite.config.ts）。
+ * 注意：bundler 入口（ort.bundle.min.mjs）默认加载 jsep（GPU）变体，移动端
+ * GPU 支持差且 26.8MB 过大，改为 CPU 变体 ort-wasm-simd-threaded.mjs/wasm
+ * （13.5MB，兼容所有设备）。文件与 package.json 版本同步，升级 onnxruntime-web
+ * 时需重新复制。
  */
 const WASM_PATHS = '/ort-wasm/'
+
+// 强制 CPU 执行：不使用 WebGPU/WebGL（jsep），避免移动端初始化失败
+// onnxruntime-web 默认优先 jsep，这里显式禁用 webgpu 让 wasm 后端兜底
 /**
  * 空洞填充最小面积（占图面积比例）：内部洞面积 >= 该值才填。
  * 小洞保留为细节（眼睛/花纹/文字等，u2netp 常把主体内与背景同色的
@@ -40,8 +46,11 @@ function imageKey(image: SourceImage): string {
 /** 单例加载模型（首次调用创建，后续复用；失败后重置以便下次重试）。 */
 function getSession(): Promise<import('onnxruntime-web').InferenceSession> {
   if (!sessionPromise) {
-    // 动态导入：onnxruntime-web 较大（~600KB），只在首次抠图时加载
-    sessionPromise = import('onnxruntime-web')
+    // 动态导入 onnxruntime-web 的 CPU wasm 后端（'onnxruntime-web/wasm'）：
+    // 1) 包较大（~600KB），只在首次抠图时加载
+    // 2) 默认入口（ort.bundle.min.mjs）优先 jsep/WebGPU（GPU 加速），移动端
+    //    GPU 支持差导致初始化失败；wasm 后端纯 CPU 兼容所有设备
+    sessionPromise = import('onnxruntime-web/wasm')
       .then((ort) => {
         ortModule = ort
         ort.env.wasm.wasmPaths = WASM_PATHS // 必须在 create 前设置
