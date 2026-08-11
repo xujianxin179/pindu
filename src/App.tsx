@@ -345,8 +345,8 @@ function App() {
   const [gridWidth, setGridWidth] = useState<number | ''>('')
   const [gridHeight, setGridHeight] = useState<number | ''>('')
   const [maxColors, setMaxColors] = useState<number | ''>(DEFAULT_MAX_COLORS)
-  /** 抠图方式：'ai'=AI 语义分割（失败回退颜色检测），'color'=颜色检测（flood fill），'off'=不抠图 */
-  const [bgMode, setBgMode] = useState<'ai' | 'color' | 'off'>('ai')
+  /** 抠图方式：'ai'=AI 语义分割（失败回退颜色检测），'off'=不抠图 */
+  const [bgMode, setBgMode] = useState<'ai' | 'off'>('ai')
   /** AI 抠图背景 mask（源图像素级，1=背景）；null=未生成（等待中），'failed'=AI 失败（回退颜色检测） */
   const [bgMask, setBgMask] = useState<Uint8Array | 'failed' | null>(null)
   const [result, setResult] = useState<ConvertResult | null>(null)
@@ -401,7 +401,7 @@ function App() {
         maxColors,
         removeBackground,
         // AI 模式传外部 mask（失败 'failed' / 等待中 null / 与图不匹配时不传，回退内部 flood fill）；
-        // 颜色模式不传（内部 flood fill），不抠图时 removeBackground=false
+        // 不抠图时 removeBackground=false
         backgroundMask:
           bgMode === 'ai' &&
           bgMask !== 'failed' &&
@@ -562,7 +562,6 @@ function App() {
           {(
             [
               ['ai', '智能抠图'],
-              ['color', '去背景'],
               ['off', '不抠图'],
             ] as const
           ).map(([value, label]) => (
