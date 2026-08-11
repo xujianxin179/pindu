@@ -13,7 +13,16 @@
 - **作品库**：保存、重命名、删除、续编，IndexedDB 本地存储
 - **离线可用**：PWA service worker 预缓存，断网也能用
 
-## 使用方法
+## 在线使用（无需安装）
+
+两个线上地址（自动部署，**push 到 master 即自动同步更新**，无需手动操作）：
+
+| 地址 | 特点 |
+|---|---|
+| `https://pindu-e4w.pages.dev/` | **国内访问更快更稳**（Cloudflare Pages，推荐） |
+| `https://xujianxin179.github.io/pindu/` | 国际备用（GitHub Pages） |
+
+## 本地开发与部署
 
 ```bash
 npm install
@@ -22,13 +31,22 @@ npm run build     # 生产构建（含 SW 预缓存）
 npm run preview   # 预览 dist
 ```
 
-部署 `dist/` 到任意静态托管（需要 HTTPS 才能注册 service worker）。已配置 GitHub Actions 自动部署：push 到 master 即构建发布到 GitHub Pages，并同步部署到 Cloudflare Pages（国内备用地址）。
+部署 `dist/` 到任意静态托管（需要 HTTPS 才能注册 service worker）。
 
-## iPad 使用（小白版）
+### 自动部署（已配置）
 
-1. **打开网址**：iPad 的 Safari 浏览器地址栏输入
-   `https://xujianxin179.github.io/pindu/`（国际备用）或 `https://pindu-e4w.pages.dev/`（国内更快），回车
-2. **添加到主屏幕**：点 Safari 底部的**分享按钮**（方框向上箭头）→ 往下滑点 **"添加到主屏幕"** → 右上角**添加**。桌面会出现一个 pinDu 图标，之后像 App 一样点开就能用
+GitHub Actions 在 push 到 master 时自动构建并发布到两个平台：
+
+- `.github/workflows/deploy-gh.yml` → GitHub Pages（`BASE_PATH=/pindu/` 子路径构建）
+- `.github/workflows/deploy-cf.yml` → Cloudflare Pages（根路径构建，wasm gzip 压缩绕过单文件 25MiB 限制）
+
+Cloudflare 部署需要仓库 Secrets：`CF_API_TOKEN` + `CF_ACCOUNT_ID`（Cloudflare 面板生成）。
+
+## iPad / 安卓平板使用（小白版）
+
+1. **打开网址**：浏览器（iPad 用 Safari，安卓用 Chrome/Edge）地址栏输入
+   `https://pindu-e4w.pages.dev/`（国内更快），回车
+2. **添加到主屏幕**：iPad 点 Safari 底部的**分享按钮**（方框向上箭头）→ 往下滑点 **"添加到主屏幕"** → 右上角**添加**；安卓点浏览器右上角 **⋮ 菜单** → **"添加到主屏幕"** 或 **"安装应用"**。桌面会出现 pinDu 图标，之后像 App 一样点开就能用
 3. **导入图片**：点右上角**"导入图片"** → 选相册里的照片（或拍照）
 4. **裁剪**（可选）：拖动黄色框选主体 → 点**"确认裁剪"**；不想要裁剪直接点**"不裁剪"**
 5. **智能抠图**：默认自动识别主体、背景变空格，等一两秒出图
@@ -36,9 +54,7 @@ npm run preview   # 预览 dist
 7. **保存**：点**"保存作品"**存在本地，下次打开还在
 8. **导出**：点**"导出图纸"**生成 PNG/PDF，可以打印或分享
 
-> 断网也能用（已缓存）。数据都存 iPad 本地，不上传任何服务器。
-
-iPad 使用：Safari 打开部署地址 → 分享 → 添加到主屏幕。
+> 断网也能用（已缓存）。数据都存本机，不上传任何服务器。
 
 ## 技术栈
 
