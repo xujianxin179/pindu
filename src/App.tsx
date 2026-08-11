@@ -98,18 +98,18 @@ const CROP_PREVIEW_MAX = 480
  */
 function CropView({
   image,
+  initialRect,
   onDone,
 }: {
   image: SourceImage
+  initialRect: CropRect | null
   onDone: (rect: CropRect | null) => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [crop, setCrop] = useState<CropRect>({
-    x: 0,
-    y: 0,
-    width: image.width,
-    height: image.height,
-  })
+  // 初始框：上次裁剪区域（重新裁剪时微调），否则全图
+  const [crop, setCrop] = useState<CropRect>(
+    initialRect ?? { x: 0, y: 0, width: image.width, height: image.height },
+  )
   const dragRef = useRef<{
     mode: 'move' | 'nw' | 'ne' | 'sw' | 'se'
     startX: number
@@ -340,6 +340,7 @@ function App() {
   const [image, setImage] = useState<SourceImage | null>(null)
   const [croppedImage, setCroppedImage] = useState<SourceImage | null>(null)
   const [cropMode, setCropMode] = useState(false)
+  const [lastCropRect, setLastCropRect] = useState<CropRect | null>(null)
   const [gridWidth, setGridWidth] = useState<number | ''>('')
   const [gridHeight, setGridHeight] = useState<number | ''>('')
   const [maxColors, setMaxColors] = useState<number | ''>(DEFAULT_MAX_COLORS)
@@ -384,12 +385,14 @@ function App() {
     setGridHeight(size.height)
     setImage(img)
     setCroppedImage(null)
+    setLastCropRect(null)
     setCropMode(true) // 先手动裁剪，再去背景/转换
   }
 
   /** 裁剪确认：rect 非空用裁剪图，null 用原图；确认裁剪后网格按新比例自适应。 */
   function onCropDone(rect: CropRect | null) {
     if (!image) return
+    setLastCropRect(rect)
     const cropped = rect ? cropImageToSourceImage(image, rect) : image
     setCroppedImage(cropped)
     setCropMode(false)
@@ -436,6 +439,7 @@ function App() {
     setHighlightId(null)
     setImage(null)
     setCroppedImage(null)
+    setLastCropRect(null)
     setCropMode(false)
   }
 
@@ -532,7 +536,7 @@ function App() {
       </div>
 
       {cropMode && image ? (
-        <CropView image={image} onDone={onCropDone} />
+        <CropView image={image} initialRect={lastCropRect} onDone={onCropDone} />
       ) : (
         <>
           {result && (
@@ -546,6 +550,15 @@ function App() {
                 />
                 <p className="grid-meta">
                   {result.pattern.width} × {result.pattern.height} 格
+                  {image && (
+                    <button
+                      className="btn"
+                      style={{ marginLeft: 12, verticalAlign: 'middle' }}
+                      onClick={() => setCropMode(true)}
+                    >
+                      重新裁剪
+                    </button>
+                  )}
                 </p>
               </div>
 
