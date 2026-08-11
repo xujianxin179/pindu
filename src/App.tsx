@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, type ChangeEvent } from 'react'
-import { convertImageToPattern, computeColorCounts } from './domain/convert'
+import { convertImageToPattern, computeColorCounts, cropImageToSourceImage } from './domain/convert'
+import { generateBackgroundMask, getCachedMask } from './ai-mask'
 import { MARD_PALETTE } from './domain/palette'
 import type { ColorId, ColorPalette, ConvertResult, Pattern, RGB, SourceImage } from './domain/types'
 import { exportSheetPng, exportSheetPdf, shareSheet } from './sheet-export'
@@ -83,6 +84,182 @@ function PatternCanvas({
   return <canvas ref={ref} />
 }
 
+/** 裁剪矩形（原图像素坐标）。 */
+type CropRect = { x: number; y: number; width: number; height: number }
+
+/** 裁剪框最小边长 / 手柄命中半径（原图像素）。 */
+const MIN_CROP = 4
+const HANDLE_HIT = 10
+/** 裁剪预览最长边（CSS px）。 */
+const CROP_PREVIEW_MAX = 480
+
+/**
+ * 裁剪视图：显示原图 + 可拖动/四角缩放的裁剪框，确认后回调裁剪区域。
+ * 触摸与鼠标统一走 pointer events（stage 上 touch-action: none 防滚动干扰）。
+ */
+function CropView({
+  image,
+  initialRect,
+  onDone,
+}: {
+  image: SourceImage
+  initialRect: CropRect | null
+  onDone: (rect: CropRect | null) => void
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  // 初始框：上次裁剪区域（重新裁剪时微调），否则全图
+  const [crop, setCrop] = useState<CropRect>(
+    initialRect ?? { x: 0, y: 0, width: image.width, height: image.height },
+  )
+  const dragRef = useRef<{
+    mode: 'move' | 'nw' | 'ne' | 'sw' | 'se'
+    startX: number
+    startY: number
+    crop: CropRect
+  } | null>(null)
+  // 显示尺寸：等比缩放到最长边 CROP_PREVIEW_MAX（canvas 像素 = 原图像素）
+  const displayScale = Math.min(1, CROP_PREVIEW_MAX / Math.max(image.width, image.height))
+  const displayW = Math.round(image.width * displayScale)
+  const displayH = Math.round(image.height * displayScale)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')!
+    canvas.width = image.width
+    canvas.height = image.height
+    const imageData = ctx.createImageData(image.width, image.height)
+    image.pixels.forEach((p, i) => {
+      imageData.data[i * 4] = p.r
+      imageData.data[i * 4 + 1] = p.g
+      imageData.data[i * 4 + 2] = p.b
+      imageData.data[i * 4 + 3] = 255
+    })
+    ctx.putImageData(imageData, 0, 0)
+  }, [image])
+
+  /** 指针位置 -> 原图像素坐标（按显示缩放换算）。 */
+  function toImagePos(e: React.PointerEvent): { x: number; y: number } {
+    const rect = canvasRef.current!.getBoundingClientRect()
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * image.width,
+      y: ((e.clientY - rect.top) / rect.height) * image.height,
+    }
+  }
+
+  /** 命中四角手柄（半径 HANDLE_HIT 原图像素）返回手柄名，否则 null。 */
+  function hitHandle(
+    pos: { x: number; y: number },
+    c: CropRect,
+  ): 'nw' | 'ne' | 'sw' | 'se' | null {
+    const near = (a: number, b: number) => Math.abs(a - b) <= HANDLE_HIT
+    if (near(pos.x, c.x) && near(pos.y, c.y)) return 'nw'
+    if (near(pos.x, c.x + c.width) && near(pos.y, c.y)) return 'ne'
+    if (near(pos.x, c.x) && near(pos.y, c.y + c.height)) return 'sw'
+    if (near(pos.x, c.x + c.width) && near(pos.y, c.y + c.height)) return 'se'
+    return null
+  }
+
+  /** 限制裁剪框在图片范围内且不小于最小边长。 */
+  function clampCrop(next: CropRect): CropRect {
+    const min = Math.min(MIN_CROP, image.width, image.height)
+    const x = Math.max(0, Math.min(next.x, image.width - min))
+    const y = Math.max(0, Math.min(next.y, image.height - min))
+    const width = Math.max(min, Math.min(next.width, image.width - x))
+    const height = Math.max(min, Math.min(next.height, image.height - y))
+    return { x, y, width, height }
+  }
+
+  function onPointerDown(e: React.PointerEvent) {
+    const pos = toImagePos(e)
+    const handle = hitHandle(pos, crop)
+    if (handle) {
+      dragRef.current = { mode: handle, startX: pos.x, startY: pos.y, crop }
+    } else if (
+      pos.x >= crop.x &&
+      pos.x <= crop.x + crop.width &&
+      pos.y >= crop.y &&
+      pos.y <= crop.y + crop.height
+    ) {
+      dragRef.current = { mode: 'move', startX: pos.x, startY: pos.y, crop }
+    } else {
+      return
+    }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    const drag = dragRef.current
+    if (!drag) return
+    const pos = toImagePos(e)
+    const dx = pos.x - drag.startX
+    const dy = pos.y - drag.startY
+    const c = drag.crop
+    switch (drag.mode) {
+      case 'move':
+        setCrop(clampCrop({ x: c.x + dx, y: c.y + dy, width: c.width, height: c.height }))
+        break
+      case 'se':
+        setCrop(clampCrop({ ...c, width: c.width + dx, height: c.height + dy }))
+        break
+      case 'nw':
+        setCrop(clampCrop({ x: c.x + dx, y: c.y + dy, width: c.width - dx, height: c.height - dy }))
+        break
+      case 'ne':
+        setCrop(clampCrop({ x: c.x, y: c.y + dy, width: c.width + dx, height: c.height - dy }))
+        break
+      case 'sw':
+        setCrop(clampCrop({ x: c.x + dx, y: c.y, width: c.width - dx, height: c.height + dy }))
+        break
+    }
+  }
+
+  function onPointerUp() {
+    dragRef.current = null
+  }
+
+  return (
+    <div className="crop-wrap">
+      <div
+        className="crop-stage"
+        style={{ width: displayW, height: displayH }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        <canvas
+          ref={canvasRef}
+          className="crop-canvas"
+          style={{ width: displayW, height: displayH }}
+        />
+        <div
+          className="crop-box"
+          style={{
+            left: crop.x * displayScale,
+            top: crop.y * displayScale,
+            width: crop.width * displayScale,
+            height: crop.height * displayScale,
+          }}
+        >
+          <span className="crop-handle crop-nw" />
+          <span className="crop-handle crop-ne" />
+          <span className="crop-handle crop-sw" />
+          <span className="crop-handle crop-se" />
+        </div>
+      </div>
+      <div className="crop-actions">
+        <button className="btn" onClick={() => onDone(null)}>
+          不裁剪
+        </button>
+        <button className="btn btn-primary" onClick={() => onDone(crop)}>
+          确认裁剪
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /** 算色清单：按 Active Palette 顺序列出每个色号 + 颜色样块 + 数量。点击 chip 高亮该色号在图案中的位置。 */
 function ColorCountsList({
   result,
@@ -162,9 +339,16 @@ function WorkspacePanel({
 
 function App() {
   const [image, setImage] = useState<SourceImage | null>(null)
-  const [longSide, setLongSide] = useState<number | ''>(DEFAULT_LONG_SIDE)
+  const [croppedImage, setCroppedImage] = useState<SourceImage | null>(null)
+  const [cropMode, setCropMode] = useState(false)
+  const [lastCropRect, setLastCropRect] = useState<CropRect | null>(null)
+  const [gridWidth, setGridWidth] = useState<number | ''>('')
+  const [gridHeight, setGridHeight] = useState<number | ''>('')
   const [maxColors, setMaxColors] = useState<number | ''>(DEFAULT_MAX_COLORS)
-  const [removeBackground, setRemoveBackground] = useState(true)
+  /** 抠图方式：'ai'=AI 语义分割（失败回退颜色检测），'off'=不抠图 */
+  const [bgMode, setBgMode] = useState<'ai' | 'off'>('ai')
+  /** AI 抠图背景 mask（源图像素级，1=背景）；null=未生成（等待中），'failed'=AI 失败（回退颜色检测） */
+  const [bgMask, setBgMask] = useState<Uint8Array | 'failed' | null>(null)
   const [result, setResult] = useState<ConvertResult | null>(null)
   const [highlightId, setHighlightId] = useState<ColorId | null>(null)
   const [showColorLabels, setShowColorLabels] = useState(true)
@@ -174,6 +358,8 @@ function App() {
   const [saveName, setSaveName] = useState('')
   const storeRef = useRef<WorkStore | null>(null)
   if (!storeRef.current) storeRef.current = new IdbWorkStore()
+  // 转换用图：确认裁剪后用裁剪图，未裁剪时用原图
+  const activeImage = croppedImage ?? image
 
   useEffect(() => {
     storeRef.current!.list().then(setWorks)
@@ -183,22 +369,89 @@ function App() {
     setWorks(await storeRef.current!.list())
   }
 
+  /**
+   * AI 智能抠图：图变化（导入/裁剪确认）后无条件在后台预计算并缓存 mask，
+   * 与当前抠图模式解耦——切到智能抠图时直接命中缓存，不再重新推理等待。
+   * 仅 activeImage 变化触发（cropMode 变化仅清缓存态，不重算）。
+   */
   useEffect(() => {
-    if (!image || longSide === '' || maxColors === '') return
-    const size = computeGridSize(image, longSide)
+    if (!activeImage || cropMode) return
+    // 换图后清掉旧结果与旧缓存态，避免等待期显示过期图案（含错位 mask 的错误帧）
+    setResult(null)
+    setBgMask(getCachedMask(activeImage))
+    let cancelled = false
+    generateBackgroundMask(activeImage)
+      .then((m) => {
+        if (!cancelled) setBgMask(m)
+      })
+      .catch(() => {
+        // 模型加载失败等：回退到内部颜色检测（flood fill）
+        if (!cancelled) setBgMask('failed')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeImage])
+
+  useEffect(() => {
+    if (!activeImage || cropMode || gridWidth === '' || gridHeight === '' || maxColors === '') return
+    // 智能抠图：命中缓存立即转换；未命中（后台预计算中）先等待，完成后重跑本 effect
+    if (bgMode === 'ai' && bgMask === null) return
+    const removeBackground = bgMode !== 'off'
     const r = convertImageToPattern(
-      image,
-      { ...size, maxColors, removeBackground },
+      activeImage,
+      {
+        width: gridWidth,
+        height: gridHeight,
+        maxColors,
+        removeBackground,
+        // AI 模式传外部 mask（失败 'failed' / 等待中 null / 与图不匹配时不传，回退内部 flood fill）；
+        // 不抠图时 removeBackground=false
+        backgroundMask:
+          bgMode === 'ai' &&
+          bgMask !== 'failed' &&
+          bgMask !== null &&
+          bgMask.length === activeImage.pixels.length
+            ? bgMask
+            : undefined,
+      },
       MARD_PALETTE,
     )
     setResult(r)
-  }, [image, longSide, maxColors, removeBackground])
+  }, [activeImage, cropMode, gridWidth, gridHeight, maxColors, bgMode, bgMask])
 
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     const img = await fileToSourceImage(file)
+    // 导入图片时按长边 DEFAULT_LONG_SIDE 给宽高一个初值，用户可再分别调整
+    const size = computeGridSize(img, DEFAULT_LONG_SIDE)
+    setGridWidth(size.width)
+    setGridHeight(size.height)
     setImage(img)
+    setCroppedImage(null)
+    setLastCropRect(null)
+    setCropMode(true) // 先手动裁剪，再去背景/转换
+  }
+
+  /** 裁剪确认：rect 非空用裁剪图，null 用原图；确认裁剪后网格按新比例自适应。 */
+  function onCropDone(rect: CropRect | null) {
+    if (!image) return
+    setLastCropRect(rect)
+    const cropped = rect ? cropImageToSourceImage(image, rect) : image
+    setCroppedImage(cropped)
+    setCropMode(false)
+    if (!rect) return
+    // 宽高自适应：保持当前长边珠数不变，短边按裁剪区域比例重新分配
+    const longSide = Math.max(
+      typeof gridWidth === 'number' ? gridWidth : 0,
+      typeof gridHeight === 'number' ? gridHeight : 0,
+    )
+    if (longSide > 0) {
+      const size = computeGridSize(cropped, longSide)
+      setGridWidth(size.width)
+      setGridHeight(size.height)
+    }
   }
 
   /** 保存当前图案为作品：续编（editingWorkId）时更新原作品，否则新建。 */
@@ -230,6 +483,9 @@ function App() {
     setSaveName(work.name)
     setHighlightId(null)
     setImage(null)
+    setCroppedImage(null)
+    setLastCropRect(null)
+    setCropMode(false)
   }
 
   async function onRenameWork() {
@@ -274,14 +530,25 @@ function App() {
 
       <div className="params">
         <label className="param-field">
-          长边珠数
+          宽
           <input
             type="number"
             min={1}
             max={200}
-            value={longSide}
+            value={gridWidth}
             placeholder="40"
-            onChange={(e) => setLongSide(e.target.value === '' ? '' : Number(e.target.value))}
+            onChange={(e) => setGridWidth(e.target.value === '' ? '' : Number(e.target.value))}
+          />
+        </label>
+        <label className="param-field">
+          高
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={gridHeight}
+            placeholder="40"
+            onChange={(e) => setGridHeight(e.target.value === '' ? '' : Number(e.target.value))}
           />
         </label>
         <label className="param-field">
@@ -295,14 +562,26 @@ function App() {
             onChange={(e) => setMaxColors(e.target.value === '' ? '' : Number(e.target.value))}
           />
         </label>
-        <label className="param-field">
-          <input
-            type="checkbox"
-            checked={removeBackground}
-            onChange={(e) => setRemoveBackground(e.target.checked)}
-          />
-          去背景
-        </label>
+        <span className="param-field">
+          抠图
+          {(
+            [
+              ['ai', '智能抠图'],
+              ['off', '不抠图'],
+            ] as const
+          ).map(([value, label]) => (
+            <label key={value}>
+              <input
+                type="radio"
+                name="bg-mode"
+                value={value}
+                checked={bgMode === value}
+                onChange={() => setBgMode(value)}
+              />
+              {label}
+            </label>
+          ))}
+        </span>
         <label className="param-field">
           <input
             type="checkbox"
@@ -313,76 +592,98 @@ function App() {
         </label>
       </div>
 
-      {result && (
+      {cropMode && image ? (
+        <CropView image={image} initialRect={lastCropRect} onDone={onCropDone} />
+      ) : (
         <>
-          <div className="canvas-wrap">
-            <PatternCanvas
-              pattern={result.pattern}
-              palette={MARD_PALETTE}
-              highlightId={highlightId}
-              showColorLabels={showColorLabels}
-            />
-            <p className="grid-meta">
-              {result.pattern.width} × {result.pattern.height} 格
-            </p>
-          </div>
+          {result && (
+            <>
+              <div className="canvas-wrap">
+                <PatternCanvas
+                  pattern={result.pattern}
+                  palette={MARD_PALETTE}
+                  highlightId={highlightId}
+                  showColorLabels={showColorLabels}
+                />
+                <p className="grid-meta">
+                  {result.pattern.width} × {result.pattern.height} 格
+                  {image && (
+                    <button
+                      className="btn"
+                      style={{ marginLeft: 12, verticalAlign: 'middle' }}
+                      onClick={() => setCropMode(true)}
+                    >
+                      重新裁剪
+                    </button>
+                  )}
+                </p>
+                {bgMask === 'failed' && (
+                  <p className="grid-meta">AI 抠图失败，已用颜色检测替代</p>
+                )}
+              </div>
 
-          <ColorCountsList
-            result={result}
-            palette={MARD_PALETTE}
-            highlightId={highlightId}
-            onHighlight={setHighlightId}
-          />
+              <ColorCountsList
+                result={result}
+                palette={MARD_PALETTE}
+                highlightId={highlightId}
+                onHighlight={setHighlightId}
+              />
 
-          <div className="sheet-actions">
-            <button
-              className="btn"
-              onClick={() => exportSheetPng(result, MARD_PALETTE, 'pindu-sheet.png', highlightId)}
-            >
-              导出图纸 PNG
-            </button>
-            <button
-              className="btn"
-              onClick={() => exportSheetPdf(result, MARD_PALETTE, 'pindu-sheet.pdf', highlightId)}
-            >
-              导出图纸 PDF
-            </button>
-            <select
-              className="btn"
-              defaultValue="png"
-              style={{ background: 'var(--panel)', color: 'var(--ink)' }}
-              onChange={(e) =>
-                shareSheet(
-                  result,
-                  MARD_PALETTE,
-                  `pindu-sheet.${e.target.value}`,
-                  e.target.value as 'png' | 'pdf',
-                  highlightId,
-                )
-              }
-            >
-              <option value="png">分享图纸 PNG</option>
-              <option value="pdf">分享图纸 PDF</option>
-            </select>
-          </div>
+              <div className="sheet-actions">
+                <button
+                  className="btn"
+                  onClick={() => exportSheetPng(result, MARD_PALETTE, 'pindu-sheet.png', highlightId)}
+                >
+                  导出图纸 PNG
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => exportSheetPdf(result, MARD_PALETTE, 'pindu-sheet.pdf', highlightId)}
+                >
+                  导出图纸 PDF
+                </button>
+                <select
+                  className="btn"
+                  defaultValue="png"
+                  style={{ background: 'var(--panel)', color: 'var(--ink)' }}
+                  onChange={(e) =>
+                    shareSheet(
+                      result,
+                      MARD_PALETTE,
+                      `pindu-sheet.${e.target.value}`,
+                      e.target.value as 'png' | 'pdf',
+                      highlightId,
+                    )
+                  }
+                >
+                  <option value="png">分享图纸 PNG</option>
+                  <option value="pdf">分享图纸 PDF</option>
+                </select>
+              </div>
 
-          <div className="save-row">
-            <input
-              placeholder="作品名称，例如：星空小猫"
-              value={saveName}
-              onChange={(e) => setSaveName(e.target.value)}
-            />
-            <button className="btn btn-primary" onClick={onSaveWork}>
-              保存作品
-            </button>
-          </div>
+              <div className="save-row">
+                <input
+                  placeholder="作品名称，例如：星空小猫"
+                  value={saveName}
+                  onChange={(e) => setSaveName(e.target.value)}
+                />
+                <button className="btn btn-primary" onClick={onSaveWork}>
+                  保存作品
+                </button>
+              </div>
+            </>
+          )}
+
+          {!result && (
+            <div className="canvas-wrap">
+              {bgMode === 'ai' && activeImage && bgMask === null ? (
+                <p className="empty">正在智能抠图中…</p>
+              ) : (
+                <p className="empty">从右上角导入一张图片，开始拼豆。</p>
+              )}
+            </div>
+          )}
         </>
-      )}
-
-      {!result && (
-        <div className="canvas-wrap">
-          <p className="empty">从右上角导入一张图片，开始拼豆。</p>
-        </div>
       )}
 
       <WorkspacePanel

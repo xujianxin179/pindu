@@ -35,8 +35,13 @@ export interface ConvertParams {
   width: number
   height: number
   maxColors?: number
-  /** 自动去掉背景色（边缘主色检测，接近的格子变空格）。 */
+  /** 自动去掉背景色（默认检测与边缘连通的背景区域，接近的格子变空格）。 */
   removeBackground?: boolean
+  /**
+   * 外部提供的背景 mask（源图像素级，1=背景，长度 = image.width * image.height）。
+   * 提供时优先于内部背景检测（如 AI 抠图的结果）。
+   */
+  backgroundMask?: Uint8Array
 }
 
 /** 待转换的源图片：宽高 + 像素 RGB 数组（row-major）。 */

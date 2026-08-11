@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { convertImageToPattern, computeColorCounts, dominantEdgeColor } from './convert'
+import {
+  convertImageToPattern,
+  computeColorCounts,
+  cropImageToSourceImage,
+  floodFillBackgroundMask,
+} from './convert'
 import type { ColorPalette, Pattern, SourceImage } from './types'
 
 // 用一个独立的小色板做 worked example，expected 值来自手工推理，
@@ -49,6 +54,64 @@ describe('convertImageToPattern', () => {
     }
     const result = convertImageToPattern(image, { width: 2, height: 2, removeBackground: false }, palette)
     expect(result.pattern.cells).toEqual(['R', 'R', 'R', 'R'])
+  })
+
+  it('一格内混合颜色时，取覆盖最多的颜色（多数派），小特征不被平均稀释', () => {
+    // 2x1 -> 1x1：60% 红 + 40% 白，平均 (255,102,102) 会量化成粉/白；
+    // 多数派投票选红 -> 保留红特征
+    const p: ColorPalette = [
+      { id: 'W', name: '白', rgb: { r: 255, g: 255, b: 255 } },
+      { id: 'R', name: '红', rgb: { r: 255, g: 0, b: 0 } },
+      { id: 'P', name: '粉', rgb: { r: 255, g: 100, b: 100 } },
+    ]
+    const image: SourceImage = {
+      width: 10,
+      height: 1,
+      pixels: [
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 1, height: 1, removeBackground: false },
+      p,
+    )
+    expect(result.pattern.cells).toEqual(['R'])
+  })
+
+  it('平局（各占一半）取平均色，避免投票漂移', () => {
+    // 2x2 -> 1x1：2 红 + 2 白，平局取平均 (255,128,128) -> 粉
+    const p: ColorPalette = [
+      { id: 'W', name: '白', rgb: { r: 255, g: 255, b: 255 } },
+      { id: 'P', name: '粉', rgb: { r: 255, g: 128, b: 128 } },
+      { id: 'R', name: '红', rgb: { r: 255, g: 0, b: 0 } },
+    ]
+    const image: SourceImage = {
+      width: 2,
+      height: 2,
+      pixels: [
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 255, b: 255 },
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 1, height: 1, removeBackground: false },
+      p,
+    )
+    // 平局 -> 平均 (255,128,128) -> 粉 P
+    expect(result.pattern.cells).toEqual(['P'])
   })
 
   it('activePalette 只含实际用到的色号，按色板顺序', () => {
@@ -176,35 +239,104 @@ describe('computeColorCounts', () => {
   })
 })
 
-describe('dominantEdgeColor（边缘主色检测）', () => {
-  it('返回边缘像素的众数色', () => {
-    // 4x4：边缘 12 格白色、中心 4 格红色
-    const pixels = Array.from({ length: 16 }, () => ({ r: 255, g: 255, b: 255 }))
-    pixels[5] = { r: 255, g: 0, b: 0 }
-    pixels[6] = { r: 255, g: 0, b: 0 }
-    pixels[9] = { r: 255, g: 0, b: 0 }
-    pixels[10] = { r: 255, g: 0, b: 0 }
-    const image: SourceImage = { width: 4, height: 4, pixels }
-    expect(dominantEdgeColor(image)).toEqual({ r: 255, g: 255, b: 255 })
+describe('floodFillBackgroundMask（连通域背景检测）', () => {
+  const W = { r: 255, g: 255, b: 255 }
+  const R = { r: 255, g: 0, b: 0 }
+  const B = { r: 0, g: 0, b: 255 }
+
+  it('从四边向内生长：与边缘连通的相似色判为背景，主体保留', () => {
+    // 3x3：边缘白、中心红。mask：白 1、红 0
+    const image: SourceImage = {
+      width: 3,
+      height: 3,
+      pixels: [W, W, W, W, R, W, W, W, W],
+    }
+    expect([...floodFillBackgroundMask(image, 30 * 30)]).toEqual([
+      1, 1, 1,
+      1, 0, 1,
+      1, 1, 1,
+    ])
   })
 
-  it('纯色图返回该色', () => {
+  it('主体内部与背景同色的区域被主体色包围，不连通，保留为前景', () => {
+    // 5x5：白背景、红主体 3x3、主体中心 1 个白洞。
+    // 洞与边缘不连通（邻居全红，色差 255 > 30），不会被抠掉。
+    const image: SourceImage = {
+      width: 5,
+      height: 5,
+      pixels: [
+        W, W, W, W, W,
+        W, R, R, R, W,
+        W, R, W, R, W,
+        W, R, R, R, W,
+        W, W, W, W, W,
+      ],
+    }
+    const mask = floodFillBackgroundMask(image, 30 * 30)
+    expect(mask[12]).toBe(0) // 洞：保留
+    expect(mask[6]).toBe(0) // 主体：保留
+    expect(mask[0]).toBe(1) // 背景：抠除
+    expect(mask[10]).toBe(1) // 背景：抠除
+  })
+
+  it('贴边主体与边缘主色差大，不会被吞掉', () => {
+    // 4x4：上 3 行白背景、下 1 行红主体贴底边。边缘主色为白（8 白 4 红），
+    // 红主体与基准色差大，不是种子也不连通 → 保留。
+    const image: SourceImage = {
+      width: 4,
+      height: 4,
+      pixels: [
+        W, W, W, W,
+        W, W, W, W,
+        W, W, W, W,
+        R, R, R, R,
+      ],
+    }
+    expect([...floodFillBackgroundMask(image, 30 * 30)]).toEqual([
+      1, 1, 1, 1,
+      1, 1, 1, 1,
+      1, 1, 1, 1,
+      0, 0, 0, 0,
+    ])
+  })
+
+  it('多色背景只抠与边缘主色连通的色块，其余颜色保留', () => {
+    // 2x3：左列白、右列蓝，平局取先出现的白为主色。蓝列与白列色差 > 30 不连通 → 保留。
+    const image: SourceImage = {
+      width: 2,
+      height: 3,
+      pixels: [W, B, W, B, W, B],
+    }
+    expect([...floodFillBackgroundMask(image, 30 * 30)]).toEqual([
+      1, 0,
+      1, 0,
+      1, 0,
+    ])
+  })
+
+  it('渐变背景：相邻像素色差在容差内可逐级生长，整块渐变背景抠除', () => {
+    // 1x4 渐变 0→30（每步差 √300 ≈ 17 ≤ 30）：种子为与主色相近的像素，
+    // 相邻比较可逐级连通整段。旧的"与单一基准色比较"只能抠掉一个色。
+    const image: SourceImage = {
+      width: 4,
+      height: 1,
+      pixels: [
+        { r: 0, g: 0, b: 0 },
+        { r: 10, g: 10, b: 10 },
+        { r: 20, g: 20, b: 20 },
+        { r: 30, g: 30, b: 30 },
+      ],
+    }
+    expect([...floodFillBackgroundMask(image, 30 * 30)]).toEqual([1, 1, 1, 1])
+  })
+
+  it('全背景图：全部判为背景', () => {
     const image: SourceImage = {
       width: 2,
       height: 2,
-      pixels: [
-        { r: 0, g: 0, b: 0 },
-        { r: 0, g: 0, b: 0 },
-        { r: 0, g: 0, b: 0 },
-        { r: 0, g: 0, b: 0 },
-      ],
+      pixels: [W, W, W, W],
     }
-    expect(dominantEdgeColor(image)).toEqual({ r: 0, g: 0, b: 0 })
-  })
-
-  it('极小图（1x1）不抛错', () => {
-    const image: SourceImage = { width: 1, height: 1, pixels: [{ r: 1, g: 2, b: 3 }] }
-    expect(dominantEdgeColor(image)).toEqual({ r: 1, g: 2, b: 3 })
+    expect([...floodFillBackgroundMask(image, 30 * 30)]).toEqual([1, 1, 1, 1])
   })
 })
 
@@ -258,6 +390,69 @@ describe('convertImageToPattern 去背景', () => {
     expect(result.pattern.cells).toEqual(['W'])
   })
 
+  it('外部 mask 值 2（细节）的格子按自身颜色量化，不判背景', () => {
+    // 3x3：白底红主体，中心细节区标 2（如白色眼睛）；细节格保留颜色变珠子，其余背景 1 变 null
+    const image: SourceImage = {
+      width: 3,
+      height: 3,
+      pixels: [
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+      ],
+    }
+    // 背景 mask：1=外部背景，2=内部细节（中心）
+    const backgroundMask = new Uint8Array([
+      1, 1, 1,
+      1, 2, 1,
+      1, 1, 1,
+    ])
+    const result = convertImageToPattern(
+      image,
+      { width: 3, height: 3, removeBackground: true, backgroundMask },
+      bgPalette,
+    )
+    // 中心细节格：不判背景，按像素色量化；mask 2 与 0 都参与非背景平均
+    expect(result.pattern.cells).toEqual([
+      null, null, null,
+      null, 'R', null,
+      null, null, null,
+    ])
+    expect(result.activePalette).toEqual(['R'])
+  })
+
+  it('外部 mask 值 2 的格子与背景交界时不被背景稀释（只取非背景像素）', () => {
+    // 2x2：左上红（主体）、右下白（细节 2），一格内混合时背景 1 不参与平均
+    const image: SourceImage = {
+      width: 2,
+      height: 2,
+      pixels: [
+        { r: 255, g: 0, b: 0 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+        { r: 255, g: 255, b: 255 },
+      ],
+    }
+    const backgroundMask = new Uint8Array([
+      0, 1,
+      1, 2,
+    ])
+    const result = convertImageToPattern(
+      image,
+      { width: 2, height: 2, removeBackground: true, backgroundMask },
+      bgPalette,
+    )
+    // 细节格(1,1)：白（细节色），非 null、非 R；activePalette 按色板顺序（白在前）
+    expect(result.pattern.cells).toEqual(['R', null, null, 'W'])
+    expect(result.activePalette).toEqual(['W', 'R'])
+  })
+
   it('全背景图 + maxColors：activePalette 为空、所有格为 null', () => {
     const image: SourceImage = {
       width: 2,
@@ -303,5 +498,203 @@ describe('convertImageToPattern 去背景', () => {
     )
     expect(result.pattern.cells).toEqual([null, 'R', null, 'R'])
     expect(result.activePalette).toEqual(['R'])
+  })
+
+  it('交界格背景像素占多数时判为空格，不残留背景色', () => {
+    // 2x1 -> 1x1：单格覆盖 1 白(背景) + 1 红(主体)，背景占半 -> 判空格。
+    // 旧实现先求平均 (255,128,128) 会量化成白珠，在交界处残留背景色。
+    const image: SourceImage = {
+      width: 2,
+      height: 1,
+      pixels: [
+        { r: 255, g: 255, b: 255 }, // 白背景
+        { r: 255, g: 0, b: 0 }, // 红主体
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 1, height: 1, removeBackground: true },
+      bgPalette,
+    )
+    expect(result.pattern.cells).toEqual([null])
+    expect(result.activePalette).toEqual([])
+  })
+
+  it('交界格主体像素占多数时，只取主体像素平均，量化为纯主体色（不被背景稀释）', () => {
+    // 4x4 -> 2x2：右下格覆盖 1 白(背景) + 3 红(主体)。
+    // 旧实现求平均 (255,64,64) 会量化成粉色（白红之间的稀释色，像残留背景）；
+    // 新实现只取 3 个红像素的平均 (255,0,0) -> 纯红。
+    const p: ColorPalette = [
+      { id: 'W', name: '白', rgb: { r: 255, g: 255, b: 255 } },
+      { id: 'P', name: '粉', rgb: { r: 255, g: 100, b: 100 } },
+      { id: 'R', name: '红', rgb: { r: 255, g: 0, b: 0 } },
+    ]
+    const W = { r: 255, g: 255, b: 255 }
+    const R = { r: 255, g: 0, b: 0 }
+    const image: SourceImage = {
+      width: 4,
+      height: 4,
+      pixels: [
+        W, W, W, W,
+        W, W, W, W,
+        W, W, W, R,
+        W, W, R, R,
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 2, height: 2, removeBackground: true },
+      p,
+    )
+    // 前 3 格全白 -> null；右下格 1白3红 -> 主体占多数，取红像素平均 -> R
+    expect(result.pattern.cells).toEqual([null, null, null, 'R'])
+    expect(result.activePalette).toEqual(['R'])
+  })
+
+  it('maxColors + 交界格：主体占多数的交界格纯主体色参与选色并保留', () => {
+    // 4x4 -> 2x2，右下格 1白3红（主体占多数 -> 纯红平均 (255,0,0)）。
+    // maxColors=1：initial=[R]，selectRetained 选 R；右下格在 {R} 子集量化为 R。
+    // 旧实现平均 (255,64,64) 进 initial 会量化成粉 P，maxColors=1 选 P -> 丢失红。
+    const p: ColorPalette = [
+      { id: 'W', name: '白', rgb: { r: 255, g: 255, b: 255 } },
+      { id: 'P', name: '粉', rgb: { r: 255, g: 100, b: 100 } },
+      { id: 'R', name: '红', rgb: { r: 255, g: 0, b: 0 } },
+    ]
+    const W = { r: 255, g: 255, b: 255 }
+    const R = { r: 255, g: 0, b: 0 }
+    const image: SourceImage = {
+      width: 4,
+      height: 4,
+      pixels: [
+        W, W, W, W,
+        W, W, W, W,
+        W, W, W, R,
+        W, W, R, R,
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 2, height: 2, maxColors: 1, removeBackground: true },
+      p,
+    )
+    expect(result.pattern.cells).toEqual([null, null, null, 'R'])
+    expect(result.activePalette).toEqual(['R'])
+  })
+
+  it('主体内与背景同色的洞保留为原色珠，不抠成空格', () => {
+    // 5x5：白背景、红主体 3x3、主体中心 1 个白洞。
+    // 洞与边缘不连通 → 保留并量化为白珠 W；旧的颜色判定会把它抠成 null。
+    const W = { r: 255, g: 255, b: 255 }
+    const R = { r: 255, g: 0, b: 0 }
+    const image: SourceImage = {
+      width: 5,
+      height: 5,
+      pixels: [
+        W, W, W, W, W,
+        W, R, R, R, W,
+        W, R, W, R, W,
+        W, R, R, R, W,
+        W, W, W, W, W,
+      ],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 5, height: 5, removeBackground: true },
+      bgPalette,
+    )
+    expect(result.pattern.cells).toEqual([
+      null, null, null, null, null,
+      null, 'R', 'R', 'R', null,
+      null, 'R', 'W', 'R', null,
+      null, 'R', 'R', 'R', null,
+      null, null, null, null, null,
+    ])
+    expect(result.activePalette).toEqual(['W', 'R'])
+  })
+
+  it('提供 backgroundMask（外部 AI 抠图）时优先使用，忽略内部颜色检测', () => {
+    // 3x3 全红图：flood fill 会把红判为背景（众数色）；外部 mask 全 0（全前景）→ 全红珠
+    const R = { r: 255, g: 0, b: 0 }
+    const image: SourceImage = {
+      width: 3,
+      height: 3,
+      pixels: Array.from({ length: 9 }, () => ({ ...R })),
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 3, height: 3, removeBackground: true, backgroundMask: new Uint8Array(9) },
+      bgPalette,
+    )
+    expect(result.pattern.cells).toEqual(['R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R'])
+  })
+
+  it('backgroundMask 全 1（全背景）时全部判空，不依赖颜色', () => {
+    // 3x3 白图，外部 mask 全 1 → 全 null（flood fill 也会如此，但这里验证走外部路径）
+    const W = { r: 255, g: 255, b: 255 }
+    const image: SourceImage = {
+      width: 3,
+      height: 3,
+      pixels: Array.from({ length: 9 }, () => ({ ...W })),
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 3, height: 3, removeBackground: true, backgroundMask: new Uint8Array(9).fill(1) },
+      bgPalette,
+    )
+    expect(result.pattern.cells).toEqual([null, null, null, null, null, null, null, null, null])
+  })
+
+  it('removeBackground 关闭时忽略 backgroundMask', () => {
+    const R = { r: 255, g: 0, b: 0 }
+    const image: SourceImage = {
+      width: 1,
+      height: 1,
+      pixels: [{ ...R }],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 1, height: 1, removeBackground: false, backgroundMask: new Uint8Array(1).fill(1) },
+      bgPalette,
+    )
+    expect(result.pattern.cells).toEqual(['R'])
+  })
+})
+
+describe('cropImageToSourceImage（手动裁剪）', () => {
+  const image: SourceImage = {
+    width: 3,
+    height: 2,
+    pixels: [
+      { r: 255, g: 0, b: 0 }, // 红
+      { r: 0, g: 255, b: 0 }, // 绿
+      { r: 0, g: 0, b: 255 }, // 蓝
+      { r: 255, g: 255, b: 255 }, // 白
+      { r: 255, g: 255, b: 0 }, // 黄
+      { r: 0, g: 255, b: 255 }, // 青
+    ],
+  }
+
+  it('按行优先截取指定矩形区域', () => {
+    // 3x2 图裁 x:1..2, y:0..1 -> 右 2 列：绿/蓝 + 黄/青
+    const out = cropImageToSourceImage(image, { x: 1, y: 0, width: 2, height: 2 })
+    expect(out.width).toBe(2)
+    expect(out.height).toBe(2)
+    expect(out.pixels).toEqual([
+      { r: 0, g: 255, b: 0 },
+      { r: 0, g: 0, b: 255 },
+      { r: 255, g: 255, b: 0 },
+      { r: 0, g: 255, b: 255 },
+    ])
+  })
+
+  it('越界区域被裁剪到图片范围内', () => {
+    // x:2 起、宽 3 高 2 越界：clamp 后只剩 (row1, col2) 一个像素
+    const out = cropImageToSourceImage(image, { x: 2, y: 1, width: 3, height: 2 })
+    expect(out).toEqual({ width: 1, height: 1, pixels: [{ r: 0, g: 255, b: 255 }] })
+  })
+
+  it('裁全图返回同尺寸副本', () => {
+    const out = cropImageToSourceImage(image, { x: 0, y: 0, width: 3, height: 2 })
+    expect(out).toEqual(image)
   })
 })

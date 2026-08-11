@@ -43,37 +43,82 @@ function nearestColorId(target: RGB, palette: ColorPalette): ColorId {
   return bestId
 }
 
-/** 把源图片重采样到 width×height 网格，每格取覆盖区域的平均 RGB（box filter）。 */
-function resample(image: SourceImage, width: number, height: number): RGB[] {
+/**
+ * 重采样到 width×height 网格，同时按源图像素级背景 mask 判定背景，输出每格平均色与背景 mask。
+ * bgMask 非空时（1=外部背景，2=内部细节洞）：一格内背景像素（值 1）数 >=
+ * 非背景像素（0 前景 + 2 细节）数则该格判为背景（mask=true）；否则该格 RGB
+ * 只取非背景像素的颜色（见下），避免背景稀释交界格颜色。
+ * 颜色合成：多数派投票——统计格内非背景像素中覆盖最多的颜色（精确匹配 RGB），
+ * 若多数派严格过半取该色（小特征不被平均稀释，保留细节），否则取非背景像素平均
+ * （渐变/噪声场景退化为旧 box filter 行为）。bgMask 为空时：mask 全 false，
+ * 每格取覆盖区域全像素投票/平均（box filter 语义保留）。
+ */
+function resampleWithMask(
+  image: SourceImage,
+  width: number,
+  height: number,
+  bgMask: Uint8Array | null,
+): { sampled: RGB[]; mask: boolean[] } {
   const { width: sw, height: sh, pixels } = image
-  const out: RGB[] = []
+  const sampled: RGB[] = []
+  const mask: boolean[] = []
   for (let gy = 0; gy < height; gy++) {
     for (let gx = 0; gx < width; gx++) {
       const xStart = Math.floor((gx * sw) / width)
       const xEnd = Math.max(xStart + 1, Math.floor(((gx + 1) * sw) / width))
       const yStart = Math.floor((gy * sh) / height)
       const yEnd = Math.max(yStart + 1, Math.floor(((gy + 1) * sh) / height))
+      let bgCount = 0
       let r = 0
       let g = 0
       let b = 0
       let count = 0
+      // 多数派投票：精确 RGB -> 覆盖数
+      const votes = new Map<string, { rgb: RGB; n: number }>()
+      const voteKey = (rgb: RGB) => `${rgb.r},${rgb.g},${rgb.b}`
       for (let y = yStart; y < yEnd; y++) {
         for (let x = xStart; x < xEnd; x++) {
           const p = pixels[y * sw + x]
-          r += p.r
-          g += p.g
-          b += p.b
-          count++
+          if (bgMask && bgMask[y * sw + x] === 1) {
+            bgCount++
+          } else {
+            r += p.r
+            g += p.g
+            b += p.b
+            count++
+            const k = voteKey(p)
+            const e = votes.get(k)
+            if (e) e.n++
+            else votes.set(k, { rgb: p, n: 1 })
+          }
         }
       }
-      out.push({
-        r: Math.round(r / count),
-        g: Math.round(g / count),
-        b: Math.round(b / count),
-      })
+      if (bgMask && bgCount >= count) {
+        // 背景像素占多数（含平局 / 全背景）-> 判背景；占位色用背景近似，该格后续置 null
+        mask.push(true)
+        sampled.push({ r: 0, g: 0, b: 0 })
+      } else if (count > 0) {
+        // 多数派严格过半 -> 取该色（细节保留）；否则平均（渐变/平局退化）
+        const total = bgMask ? bgCount + count : count
+        const winner = [...votes.values()].sort((a, b) => b.n - a.n)[0]
+        if (winner && winner.n > total / 2) {
+          sampled.push(winner.rgb)
+        } else {
+          sampled.push({
+            r: Math.round(r / count),
+            g: Math.round(g / count),
+            b: Math.round(b / count),
+          })
+        }
+        mask.push(false)
+      } else {
+        // 全背景（count=0）：判背景
+        mask.push(true)
+        sampled.push({ r: 0, g: 0, b: 0 })
+      }
     }
   }
-  return out
+  return { sampled, mask }
 }
 
 /**
@@ -98,7 +143,7 @@ function selectRetained(
  * 检测背景色：取图片边缘一圈像素中"第一个出现次数最多"的颜色（背景通常在边缘，主体居中）。
  * 极小图（<2 像素宽或高）退化为一整圈采样，仍返回一个色。
  */
-export function dominantEdgeColor(image: SourceImage): RGB {
+function dominantEdgeColor(image: SourceImage): RGB {
   const { width: w, height: h, pixels } = image
   const counts = new Map<string, { rgb: RGB; n: number }>()
   const key = (rgb: RGB) => `${rgb.r},${rgb.g},${rgb.b}`
@@ -126,41 +171,81 @@ export function dominantEdgeColor(image: SourceImage): RGB {
 }
 
 /**
+ * 连通域背景检测（flood fill）：种子 = 边缘中与"边缘众数色"相近的像素（贴边主体与基准色
+ * 差大，不会被吞），从种子沿"与相邻像素色差 <= 容差"的区域向内生长，标记与边缘连通的
+ * 背景区域为 1。与纯颜色判定相比：主体内部被包围的同色区域不连通到边缘，不会被误抠；
+ * 渐变背景可沿相邻色差逐级生长。返回源图像素级 mask，与 image.pixels 行优先一一对应。
+ */
+export function floodFillBackgroundMask(image: SourceImage, toleranceSq: number): Uint8Array {
+  const { width: w, height: h, pixels } = image
+  const base = dominantEdgeColor(image)
+  const mask = new Uint8Array(pixels.length)
+  // 队列上界：每像素最多被 4 个邻居各推一次 + 边缘种子
+  const queue = new Uint32Array(pixels.length * 4 + 2 * (w + h))
+  let head = 0
+  let tail = 0
+  const push = (i: number) => {
+    queue[tail++] = i
+  }
+  // 种子：四条边中与基准色相近的像素
+  for (let x = 0; x < w; x++) {
+    if (colorDist(pixels[x], base) <= toleranceSq) push(x)
+    if (colorDist(pixels[(h - 1) * w + x], base) <= toleranceSq) push((h - 1) * w + x)
+  }
+  for (let y = 1; y < h - 1; y++) {
+    if (colorDist(pixels[y * w], base) <= toleranceSq) push(y * w)
+    if (colorDist(pixels[y * w + w - 1], base) <= toleranceSq) push(y * w + w - 1)
+  }
+  while (head < tail) {
+    const idx = queue[head++]
+    if (mask[idx]) continue
+    mask[idx] = 1
+    const x = idx % w
+    const y = (idx - x) / w
+    const from = pixels[idx]
+    const tryPush = (to: number) => {
+      if (!mask[to] && colorDist(pixels[to], from) <= toleranceSq) push(to)
+    }
+    if (x > 0) tryPush(idx - 1)
+    if (x < w - 1) tryPush(idx + 1)
+    if (y > 0) tryPush(idx - w)
+    if (y < h - 1) tryPush(idx + w)
+  }
+  return mask
+}
+
+/**
  * 图片转图案（核心转换管线）。
  * maxColors：先按"覆盖最多"选出用色子集（Active Palette），再在子集上量化；
- * removeBackground：默认开，检测边缘主色为背景色，与之接近的格子变空格（null）。
+ * removeBackground：默认开，用连通域背景检测（flood fill）把与边缘连通的背景区域变空格（null）。
  */
 export function convertImageToPattern(
   image: SourceImage,
   params: ConvertParams,
   palette: ColorPalette,
 ): ConvertResult {
-  const { width, height, maxColors, removeBackground = true } = params
-  const sampled = resample(image, width, height)
-  const bg = removeBackground ? dominantEdgeColor(image) : null
-
-  // 先去背景：与背景接近的格子在选色/量化前就置空，不占用用色数预算
-  let backgroundMask: boolean[] | null
-  if (bg) {
-    backgroundMask = sampled.map((rgb) => colorDist(rgb, bg) <= BG_TOLERANCE_SQ)
-  } else {
-    backgroundMask = null
-  }
+  const { width, height, maxColors, removeBackground = true, backgroundMask } = params
+  // 背景 mask：外部提供（如 AI 抠图）优先，长度不符（防御错位）时回退内部连通域检测（flood fill）；
+  // 重采样时按 mask 判背景：交界格只取非背景像素平均，背景占多数则置空
+  const bgMask = removeBackground
+    ? backgroundMask && backgroundMask.length === image.pixels.length
+      ? backgroundMask
+      : floodFillBackgroundMask(image, BG_TOLERANCE_SQ)
+    : null
+  const { sampled, mask } = resampleWithMask(image, width, height, bgMask)
 
   let retained: Set<ColorId | null>
   let cells: (ColorId | null)[]
   if (maxColors !== undefined) {
     // 用色数选择只统计非背景格
     const initial = sampled
-      .map((rgb, i) => (backgroundMask?.[i] ? null : nearestColorId(rgb, palette)))
+      .map((rgb, i) => (mask[i] ? null : nearestColorId(rgb, palette)))
       .filter((id): id is ColorId => id !== null)
     retained = selectRetained(initial, maxColors, palette)
     const subsetPalette = palette.filter((e) => retained.has(e.id))
-    cells = sampled.map((rgb, i) =>
-      backgroundMask?.[i] ? null : nearestColorId(rgb, subsetPalette),
-    )
+    cells = sampled.map((rgb, i) => (mask[i] ? null : nearestColorId(rgb, subsetPalette)))
   } else {
-    cells = sampled.map((rgb, i) => (backgroundMask?.[i] ? null : nearestColorId(rgb, palette)))
+    cells = sampled.map((rgb, i) => (mask[i] ? null : nearestColorId(rgb, palette)))
     retained = new Set(cells)
   }
 
@@ -172,7 +257,7 @@ export function convertImageToPattern(
   return { pattern, activePalette }
 }
 
-/** 背景判定容差（RGB 欧氏距离平方）：与背景色差 <= 30 视作背景。 */
+/** 背景连通判定容差（RGB 欧氏距离平方）：相邻像素色差 <= 30 视为同一背景区域。 */
 const BG_TOLERANCE_SQ = 30 * 30
 
 function colorDist(a: RGB, b: RGB): number {
@@ -180,4 +265,26 @@ function colorDist(a: RGB, b: RGB): number {
   const dg = a.g - b.g
   const db = a.b - b.b
   return dr * dr + dg * dg + db * db
+}
+
+/**
+ * 手动裁剪：从 image 截取 rect（源图像素坐标）矩形区域生成新图。
+ * 越界部分 clamp 到图片范围内；空区域返回 0 尺寸图。
+ * 用于"导入图片后先手动裁剪，再去背景/转换"的流程。
+ */
+export function cropImageToSourceImage(
+  image: SourceImage,
+  rect: { x: number; y: number; width: number; height: number },
+): SourceImage {
+  const x = Math.max(0, Math.min(Math.floor(rect.x), image.width - 1))
+  const y = Math.max(0, Math.min(Math.floor(rect.y), image.height - 1))
+  const width = Math.max(0, Math.min(Math.round(rect.width), image.width - x))
+  const height = Math.max(0, Math.min(Math.round(rect.height), image.height - y))
+  const pixels: RGB[] = []
+  for (let row = y; row < y + height; row++) {
+    for (let col = x; col < x + width; col++) {
+      pixels.push(image.pixels[row * image.width + col])
+    }
+  }
+  return { width, height, pixels }
 }
