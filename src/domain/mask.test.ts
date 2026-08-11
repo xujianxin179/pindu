@@ -35,6 +35,43 @@ describe('upsampleMask（双线性上采样，角点对齐）', () => {
     const src = new Float32Array([0.2, 0.8])
     expect(upsampleMask(src, 1, 2, 1, 5)).toHaveLength(5)
   })
+
+  it('目标侧 1 像素高（2x2 -> 4x1）退化为取首行，不产生 NaN', () => {
+    // dstH=1：sy 恒 0，等价于 2x2 -> 4x2 的第一行
+    const src = new Float32Array([0, 1, 0.5, 1])
+    const out = upsampleMask(src, 2, 2, 4, 1)
+    expect(out.length).toBe(4)
+    for (let i = 0; i < 4; i++) {
+      expect(Number.isNaN(out[i])).toBe(false)
+      expect(out[i]).toBeCloseTo([0, 1 / 3, 2 / 3, 1][i], 4)
+    }
+  })
+
+  it('目标侧 1 像素宽（2x2 -> 1x4）退化为取首列，不产生 NaN', () => {
+    // dstW=1：sx 恒 0，等价于 2x2 -> 4x4 的第一列
+    const src = new Float32Array([0, 1, 0.5, 1])
+    const out = upsampleMask(src, 2, 2, 1, 4)
+    expect(out.length).toBe(4)
+    for (let i = 0; i < 4; i++) {
+      expect(Number.isNaN(out[i])).toBe(false)
+      expect(out[i]).toBeCloseTo([0, 1 / 6, 1 / 3, 0.5][i], 4)
+    }
+  })
+
+  it('目标侧 1x1（2x2 -> 1x1）取源左上角值', () => {
+    const src = new Float32Array([0, 1, 0.5, 1])
+    expect(upsampleMask(src, 2, 2, 1, 1)[0]).toBe(0)
+  })
+
+  it('非方图（2x3 -> 3x2）输出尺寸正确且无 NaN', () => {
+    const src = new Float32Array(6).fill(0.4)
+    const out = upsampleMask(src, 2, 3, 3, 2)
+    expect(out).toHaveLength(6)
+    for (const v of out) {
+      expect(Number.isNaN(v)).toBe(false)
+      expect(v).toBeCloseTo(0.4, 6)
+    }
+  })
 })
 
 describe('binarizeToBackgroundMask（前景概率 -> 背景 mask）', () => {

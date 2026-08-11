@@ -204,10 +204,12 @@ export function convertImageToPattern(
   palette: ColorPalette,
 ): ConvertResult {
   const { width, height, maxColors, removeBackground = true, backgroundMask } = params
-  // 背景 mask：外部提供（如 AI 抠图）优先，否则内部连通域检测（flood fill）；
+  // 背景 mask：外部提供（如 AI 抠图）优先，长度不符（防御错位）时回退内部连通域检测（flood fill）；
   // 重采样时按 mask 判背景：交界格只取非背景像素平均，背景占多数则置空
   const bgMask = removeBackground
-    ? backgroundMask ?? floodFillBackgroundMask(image, BG_TOLERANCE_SQ)
+    ? backgroundMask && backgroundMask.length === image.pixels.length
+      ? backgroundMask
+      : floodFillBackgroundMask(image, BG_TOLERANCE_SQ)
     : null
   const { sampled, mask } = resampleWithMask(image, width, height, bgMask)
 

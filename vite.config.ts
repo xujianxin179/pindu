@@ -35,6 +35,17 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
+        // AI 抠图模型与 onnxruntime wasm 不预缓存（体积大），首次使用后缓存，离线可复用
+        runtimeCaching: [
+          {
+            urlPattern: /\.(onnx|wasm)$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'ai-assets',
+              expiration: { maxEntries: 8, maxAgeSeconds: 365 * 24 * 60 * 60 },
+            },
+          },
+        ],
       },
     }),
   ],

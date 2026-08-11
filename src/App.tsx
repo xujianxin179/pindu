@@ -372,6 +372,8 @@ function App() {
   useEffect(() => {
     setBgMask(null)
     if (!activeImage || cropMode || !removeBackground) return
+    // 重新抠图中：清掉旧结果，避免等待期显示过期图案（含错位 mask 的错误帧）
+    setResult(null)
     let cancelled = false
     generateBackgroundMask(activeImage)
       .then((m) => {
@@ -396,8 +398,11 @@ function App() {
         height: gridHeight,
         maxColors,
         removeBackground,
-        // AI 失败（'failed'）时不传，回退 flood fill
-        backgroundMask: bgMask === 'failed' || bgMask === null ? undefined : bgMask,
+        // AI 失败（'failed'）或 mask 与图不匹配（防御错位）时不传，回退 flood fill
+        backgroundMask:
+          bgMask === 'failed' || bgMask === null || bgMask.length !== activeImage.pixels.length
+            ? undefined
+            : bgMask,
       },
       MARD_PALETTE,
     )
@@ -589,6 +594,9 @@ function App() {
                     </button>
                   )}
                 </p>
+                {bgMask === 'failed' && (
+                  <p className="grid-meta">AI 抠图失败，已用颜色检测替代</p>
+                )}
               </div>
 
               <ColorCountsList

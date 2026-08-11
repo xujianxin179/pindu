@@ -5,7 +5,7 @@
 
 /**
  * 双线性上采样 1 通道 float mask（角点对齐：dst 角点映射到 src 角点）。
- * 1 像素宽的边退化为线性/常量插值。输出长度 dstW * dstH。
+ * 任一侧为 1 像素时退化为线性/常量插值。输出长度 dstW * dstH。
  */
 export function upsampleMask(
   mask: Float32Array,
@@ -16,12 +16,12 @@ export function upsampleMask(
 ): Float32Array {
   const out = new Float32Array(dstW * dstH)
   for (let y = 0; y < dstH; y++) {
-    const sy = srcH === 1 ? 0 : (y * (srcH - 1)) / (dstH - 1)
+    const sy = srcH === 1 || dstH === 1 ? 0 : (y * (srcH - 1)) / (dstH - 1)
     const y0 = Math.floor(sy)
     const y1 = Math.min(y0 + 1, srcH - 1)
     const wy = sy - y0
     for (let x = 0; x < dstW; x++) {
-      const sx = srcW === 1 ? 0 : (x * (srcW - 1)) / (dstW - 1)
+      const sx = srcW === 1 || dstW === 1 ? 0 : (x * (srcW - 1)) / (dstW - 1)
       const x0 = Math.floor(sx)
       const x1 = Math.min(x0 + 1, srcW - 1)
       const wx = sx - x0
