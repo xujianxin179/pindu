@@ -15,13 +15,13 @@ const THRESHOLD = 0.4
 /**
  * onnxruntime 的 wasm 文件路径前缀。loader 默认从脚本 URL 推断（vite 预构建后
  * 指向 node_modules，dev/prod 都会 404 拿到 HTML 导致 wasm 编译失败），
- * 显式指向 /ort-wasm/（src/ort-wasm/ 由 vite 插件 serve/复制，见 vite.config.ts）。
- * 注意：bundler 入口（ort.bundle.min.mjs）默认加载 jsep（GPU）变体，移动端
- * GPU 支持差且 26.8MB 过大，改为 CPU 变体 ort-wasm-simd-threaded.mjs/wasm
- * （13.5MB，兼容所有设备）。文件与 package.json 版本同步，升级 onnxruntime-web
- * 时需重新复制。
+ * 显式指向 /ort-wasm/v2/（src/ort-wasm/ 由 vite 插件 serve/复制，见 vite.config.ts）。
+ * v2：CPU 变体 ort-wasm-simd-threaded.mjs/wasm（13.5MB，兼容所有设备），
+ * 不用 jsep/GPU（移动端 GPU 支持差）。v2 子目录同时用于绕过旧 PWA
+ * ai-assets 缓存（CacheFirst 缓存了 gzip 版 wasm，URL 不变则永远命中旧数据）。
+ * 文件与 package.json 版本同步，升级 onnxruntime-web 时需重新复制。
  */
-const WASM_PATHS = '/ort-wasm/'
+const WASM_PATHS = '/ort-wasm/v2/'
 
 // 强制 CPU 执行：不使用 WebGPU/WebGL（jsep），避免移动端初始化失败
 // onnxruntime-web 默认优先 jsep，这里显式禁用 webgpu 让 wasm 后端兜底

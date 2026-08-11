@@ -10,8 +10,9 @@ import { VitePWA } from 'vite-plugin-pwa'
 /**
  * onnxruntime-web 的 wasm 运行时文件（src/ort-wasm/，与 node_modules 包版本同步复制）：
  * - dev：中间件直接 serve，绕开 vite 对 public 目录动态 import 的拒绝
- * - build：closeBundle 复制进 dist/ort-wasm/
- * URL 统一为 /ort-wasm/<file>，与 ai-mask.ts 的 ort.env.wasm.wasmPaths 对应。
+ * - build：closeBundle 复制进 dist/ort-wasm/v2/
+ * URL 统一为 /ort-wasm/v2/<file>，与 ai-mask.ts 的 ort.env.wasm.wasmPaths 对应。
+ * v2 子目录用于绕过旧 PWA ai-assets 缓存（CacheFirst 缓存过旧 URL 的 gzip 数据）。
  */
 function ortWasmPlugin(): Plugin {
   const srcDir = resolve(__dirname, 'src/ort-wasm')
@@ -20,7 +21,8 @@ function ortWasmPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use('/ort-wasm', (req, res, next) => {
         const rel = decodeURIComponent((req.url ?? '').split('?')[0]).replace(/^\//, '')
-        const file = resolve(srcDir, rel)
+        // 兼容 /ort-wasm/v2/<file> 与旧 /ort-wasm/<file>（旧缓存设备仍可能请求旧路径）
+        const file = resolve(srcDir, rel.replace(/^v2\//, ''))
         if (!file.startsWith(srcDir) || !existsSync(file) || !statSync(file).isFile()) {
           return next()
         }
@@ -32,7 +34,7 @@ function ortWasmPlugin(): Plugin {
       })
     },
     closeBundle() {
-      cpSync(srcDir, resolve(__dirname, 'dist/ort-wasm'), { recursive: true })
+      cpSync(srcDir, resolve(__dirname, 'dist/ort-wasm/v2'), { recursive: true })
     },
   }
 }
@@ -71,14 +73,16 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
-        // AI 抠图模型与 onnxruntime wasm/mjs 不预缓存（体积大），首次使用后缓存，离线可复用
+        // AI 抠图模型与 onnxruntime wasm/mjs 不预缓存（体积大），首次使用后缓存；
+        // StaleWhileRevalidate：命中缓存立即用（离线/秒开），后台拉新版本替换，
+        // 避免 CacheFirst 下旧文件（如 gzip 版 wasm）被永久缓存
         runtimeCaching: [
           {
             urlPattern: /\.(onnx|wasm|mjs)$/,
-            handler: 'CacheFirst',
+            handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'ai-assets',
-              expiration: { maxEntries: 8, maxAgeSeconds: 365 * 24 * 60 * 60 },
+              expiration: { maxEntries: 8, maxAgeSeconds: 30 * 24 * 60 * 60 },
             },
           },
         ],
