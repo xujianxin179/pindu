@@ -349,6 +349,8 @@ function App() {
   const [bgMode, setBgMode] = useState<'ai' | 'off'>('ai')
   /** AI 抠图背景 mask（源图像素级，1=背景）；null=未生成（等待中），'failed'=AI 失败（回退颜色检测） */
   const [bgMask, setBgMask] = useState<Uint8Array | 'failed' | null>(null)
+  /** AI 抠图失败原因（调试用，显示在界面上） */
+  const [aiError, setAiError] = useState<string | null>(null)
   const [result, setResult] = useState<ConvertResult | null>(null)
   const [highlightId, setHighlightId] = useState<ColorId | null>(null)
   const [showColorLabels, setShowColorLabels] = useState(true)
@@ -378,15 +380,20 @@ function App() {
     if (!activeImage || cropMode) return
     // 换图后清掉旧结果与旧缓存态，避免等待期显示过期图案（含错位 mask 的错误帧）
     setResult(null)
+    setAiError(null)
     setBgMask(getCachedMask(activeImage))
     let cancelled = false
     generateBackgroundMask(activeImage)
       .then((m) => {
         if (!cancelled) setBgMask(m)
       })
-      .catch(() => {
+      .catch((err) => {
         // 模型加载失败等：回退到内部颜色检测（flood fill）
-        if (!cancelled) setBgMask('failed')
+        console.error('AI 抠图失败:', err)
+        if (!cancelled) {
+          setBgMask('failed')
+          setAiError(String(err))
+        }
       })
     return () => {
       cancelled = true
@@ -618,7 +625,7 @@ function App() {
                   )}
                 </p>
                 {bgMask === 'failed' && (
-                  <p className="grid-meta">AI 抠图失败，已用颜色检测替代</p>
+                  <p className="grid-meta">AI 抠图失败，已用颜色检测替代{aiError ? `（${aiError.slice(0, 200)}）` : ''}</p>
                 )}
               </div>
 
