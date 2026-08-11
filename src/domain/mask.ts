@@ -49,23 +49,31 @@ export function binarizeToBackgroundMask(prob: Float32Array, threshold: number):
 }
 
 /**
- * 空洞填充：把"不与图像边缘连通的背景区域"翻转为前景（0）。
- * 只保留与边缘连通的背景（真实外围背景），主体内部被前景包围的背景洞全部填掉，
- * 保证抠图主体内部无空洞、图案整体连通。从边缘背景像素做 BFS（连通域），
- * 未达的背景像素即空洞。原地返回新 mask，输入不变。
+ * 空洞填充：把"不与图像边缘连通的背景区域"按面积处理。
+ * 边缘连通背景（真实外围背景）一律保留；
+ * 内部洞（被前景包围的背景区域）：面积 >= minArea 的填为前景（0），
+ * 面积 < minArea 的保留为背景（1）——小洞是主体细节（眼睛/花纹/文字），
+ * 大洞才是误判镂空。minArea=0 时所有洞都填。从边缘背景像素做 BFS 连通域，
+ * 原地返回新 mask，输入不变。
  */
-export function fillBackgroundHoles(mask: Uint8Array, width: number, height: number): Uint8Array {
-  const out = new Uint8Array(mask.length)
+export function fillBackgroundHoles(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  minArea = 0,
+): Uint8Array {
+  const out = new Uint8Array(mask.length) // 0=前景，默认全填
   if (mask.length === 0) return out
-  // 连通标记：1=与边缘连通的背景像素；队列上界同 flood fill（每像素最多被 4 邻居各推一次 + 边缘种子）
-  const connected = new Uint8Array(mask.length)
+  // 访问标记：1=已属于某连通域（边缘连通域或已处理的洞）
+  const visited = new Uint8Array(mask.length)
+  // 队列上界同 flood fill（每像素最多被 4 邻居各推一次 + 边缘种子）
   const queue = new Uint32Array(mask.length * 4 + 2 * (width + height))
   let head = 0
   let tail = 0
   const push = (i: number) => {
     queue[tail++] = i
   }
-  // 种子：四条边上的背景像素
+  // 阶段 1：从四条边上的背景像素 BFS，标记并保留边缘连通背景
   for (let x = 0; x < width; x++) {
     if (mask[x] === 1) push(x)
     if (mask[(height - 1) * width + x] === 1) push((height - 1) * width + x)
@@ -76,20 +84,46 @@ export function fillBackgroundHoles(mask: Uint8Array, width: number, height: num
   }
   while (head < tail) {
     const idx = queue[head++]
-    if (connected[idx]) continue
-    connected[idx] = 1
+    if (visited[idx]) continue
+    visited[idx] = 1
+    out[idx] = 1
     const x = idx % width
     const y = (idx - x) / width
     const tryPush = (to: number) => {
-      if (!connected[to] && mask[to] === 1) push(to)
+      if (!visited[to] && mask[to] === 1) push(to)
     }
     if (x > 0) tryPush(idx - 1)
     if (x < width - 1) tryPush(idx + 1)
     if (y > 0) tryPush(idx - width)
     if (y < height - 1) tryPush(idx + width)
   }
+  // 阶段 2：每个内部洞 BFS 计数（复用 queue），按面积决定填/保留
   for (let i = 0; i < mask.length; i++) {
-    out[i] = connected[i] ? 1 : 0
+    if (mask[i] === 1 && !visited[i]) {
+      head = 0
+      tail = 0
+      queue[tail++] = i
+      visited[i] = 1
+      while (head < tail) {
+        const idx = queue[head++]
+        const x = idx % width
+        const y = (idx - x) / width
+        const tryPush = (to: number) => {
+          if (!visited[to] && mask[to] === 1) {
+            visited[to] = 1
+            queue[tail++] = to
+          }
+        }
+        if (x > 0) tryPush(idx - 1)
+        if (x < width - 1) tryPush(idx + 1)
+        if (y > 0) tryPush(idx - width)
+        if (y < height - 1) tryPush(idx + width)
+      }
+      if (tail < minArea) {
+        // 小洞：保留为背景（细节）；大洞：out 保持 0（已填）
+        for (let k = 0; k < tail; k++) out[queue[k]] = 1
+      }
+    }
   }
   return out
 }

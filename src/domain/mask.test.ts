@@ -173,6 +173,51 @@ describe('fillBackgroundHoles（主体内部背景空洞填充）', () => {
     expect([...fillBackgroundHoles(mask, 5, 1)]).toEqual([1, 0, 1, 0, 1])
   })
 
+  it('minArea：面积 >= 阈值的洞才填，小洞保留（细节）', () => {
+    // 5x5：4px 洞（主体内浅色区块）+ 1px 洞（眼睛等细节），minArea=3
+    const mask = new Uint8Array(
+      M([
+        [0, 0, 0, 0, 0],
+        [0, 1, 1, 0, 1],
+        [0, 1, 1, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+      ]),
+    )
+    // 4px 洞被填、1px 洞保留为背景
+    expect([...fillBackgroundHoles(mask, 5, 5, 3)]).toEqual(
+      M([
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+      ]),
+    )
+    // 阈值 5：4px 洞也保留（< 5），整图不变
+    expect([...fillBackgroundHoles(mask, 5, 5, 5)]).toEqual([...mask])
+  })
+
+  it('minArea 默认 0：所有洞都填（与旧行为一致）', () => {
+    const mask = new Uint8Array(
+      M([
+        [0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+      ]),
+    )
+    // 1px 洞默认也填
+    expect([...fillBackgroundHoles(mask, 5, 5)]).toEqual([
+      0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0,
+    ])
+  })
+
   it('空 mask 返回空', () => {
     expect([...fillBackgroundHoles(new Uint8Array(0), 0, 0)]).toEqual([])
   })

@@ -19,6 +19,12 @@ const THRESHOLD = 0.5
  * 文件与 package.json 版本同步，升级 onnxruntime-web 时需重新复制 jsep 两个文件）。
  */
 const WASM_PATHS = '/ort-wasm/'
+/**
+ * 空洞填充最小面积（占图面积比例）：内部洞面积 >= 该值才填。
+ * 小洞保留为细节（眼睛/花纹/文字等，u2netp 常把主体内与背景同色的
+ * 细节区标为背景）；约 40x40 网格下 0.25% ≈ 4 格，属明显镂空才填。
+ */
+const HOLE_MIN_AREA_RATIO = 0.0025
 
 let ortModule: typeof import('onnxruntime-web') | null = null
 let sessionPromise: Promise<import('onnxruntime-web').InferenceSession> | null = null
@@ -81,7 +87,13 @@ export async function generateBackgroundMask(image: SourceImage): Promise<Uint8A
   const prob = out[session.outputNames[0]].data as Float32Array
   const upsampled = upsampleMask(prob, INPUT_SIZE, INPUT_SIZE, image.width, image.height)
   const binarized = binarizeToBackgroundMask(upsampled, THRESHOLD)
-  // 空洞填充：AI 在主体内部产生的孤立背景区域（不连通图像边缘）翻转为前景，
-  // 保证图案主体内部无空格、整体连通（u2netp 对镂空/高对比主体易漏标）
-  return fillBackgroundHoles(binarized, image.width, image.height)
+  // 空洞填充：AI 在主体内部产生的孤立背景区域按面积处理——大面积误判镂空
+  // 翻转为前景（保证图案整体连通），小面积保留为细节（u2netp 对主体内与
+  // 背景同色的细节区易漏标，全填会丢失眼睛/花纹等特征）
+  return fillBackgroundHoles(
+    binarized,
+    image.width,
+    image.height,
+    Math.round(image.width * image.height * HOLE_MIN_AREA_RATIO),
+  )
 }
