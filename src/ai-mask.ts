@@ -12,6 +12,13 @@ const MODEL_URL = '/models/u2netp.onnx'
 const INPUT_SIZE = 320
 /** 前景概率阈值：prob >= 0.5 判为前景。 */
 const THRESHOLD = 0.5
+/**
+ * onnxruntime 的 wasm 文件路径前缀。loader 默认从脚本 URL 推断（vite 预构建后
+ * 指向 node_modules，dev/prod 都会 404 拿到 HTML 导致 wasm 编译失败），
+ * 显式指向 /ort-wasm/（src/ort-wasm/ 由 vite 插件 serve/复制，见 vite.config.ts；
+ * 文件与 package.json 版本同步，升级 onnxruntime-web 时需重新复制 jsep 两个文件）。
+ */
+const WASM_PATHS = '/ort-wasm/'
 
 let ortModule: typeof import('onnxruntime-web') | null = null
 let sessionPromise: Promise<import('onnxruntime-web').InferenceSession> | null = null
@@ -23,6 +30,7 @@ function getSession(): Promise<import('onnxruntime-web').InferenceSession> {
     sessionPromise = import('onnxruntime-web')
       .then((ort) => {
         ortModule = ort
+        ort.env.wasm.wasmPaths = WASM_PATHS // 必须在 create 前设置
         return ort.InferenceSession.create(MODEL_URL)
       })
       .catch((err) => {
