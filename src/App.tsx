@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, type ChangeEvent } from 'react'
 import { convertImageToPattern, computeColorCounts, cropImageToSourceImage } from './domain/convert'
-import { generateBackgroundMask } from './ai-mask'
+import { generateBackgroundMask, getCachedMask } from './ai-mask'
 import { MARD_PALETTE } from './domain/palette'
 import type { ColorId, ColorPalette, ConvertResult, Pattern, RGB, SourceImage } from './domain/types'
 import { exportSheetPng, exportSheetPdf, shareSheet } from './sheet-export'
@@ -369,12 +369,16 @@ function App() {
     setWorks(await storeRef.current!.list())
   }
 
-  /** AI 智能抠图：activeImage 变化（导入/裁剪确认）后异步生成背景 mask。仅 bgMode='ai' 时执行。 */
+  /**
+   * AI 智能抠图：图变化（导入/裁剪确认）后无条件在后台预计算并缓存 mask，
+   * 与当前抠图模式解耦——切到智能抠图时直接命中缓存，不再重新推理等待。
+   * 仅 activeImage 变化触发（cropMode 变化仅清缓存态，不重算）。
+   */
   useEffect(() => {
-    setBgMask(null)
-    if (!activeImage || cropMode || bgMode !== 'ai') return
-    // 重新抠图中：清掉旧结果，避免等待期显示过期图案（含错位 mask 的错误帧）
+    if (!activeImage || cropMode) return
+    // 换图后清掉旧结果与旧缓存态，避免等待期显示过期图案（含错位 mask 的错误帧）
     setResult(null)
+    setBgMask(getCachedMask(activeImage))
     let cancelled = false
     generateBackgroundMask(activeImage)
       .then((m) => {
@@ -387,11 +391,12 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [activeImage, cropMode, bgMode])
+  }, [activeImage])
 
   useEffect(() => {
     if (!activeImage || cropMode || gridWidth === '' || gridHeight === '' || maxColors === '') return
-    if (bgMode === 'ai' && bgMask === null) return // AI 抠图中，生成后再转换
+    // 智能抠图：命中缓存立即转换；未命中（后台预计算中）先等待，完成后重跑本 effect
+    if (bgMode === 'ai' && bgMask === null) return
     const removeBackground = bgMode !== 'off'
     const r = convertImageToPattern(
       activeImage,

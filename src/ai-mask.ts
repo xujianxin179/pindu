@@ -29,6 +29,14 @@ const HOLE_MIN_AREA_RATIO = 0.0025
 let ortModule: typeof import('onnxruntime-web') | null = null
 let sessionPromise: Promise<import('onnxruntime-web').InferenceSession> | null = null
 
+/** mask 缓存：key = 图内容哈希（width×height 像素 RGB），命中跳过重复推理。 */
+const maskCache = new Map<string, Uint8Array | 'failed'>()
+
+/** 图内容指纹：尺寸 + 全部像素 RGB（字符串拼接）。 */
+function imageKey(image: SourceImage): string {
+  return `${image.width}x${image.height}:${image.pixels.map((p) => p.r << 16 | p.g << 8 | p.b).join(',')}`
+}
+
 /** 单例加载模型（首次调用创建，后续复用；失败后重置以便下次重试）。 */
 function getSession(): Promise<import('onnxruntime-web').InferenceSession> {
   if (!sessionPromise) {
@@ -74,26 +82,49 @@ function preprocess(image: SourceImage): Float32Array {
 /**
  * AI 智能抠图：返回源图像素级背景 mask（Uint8Array，1=背景）。
  * 模型推理（wasm）在异步线程执行，首次调用需加载模型（~4.5MB，之后缓存复用）。
+ * 结果按图内容缓存：同一张图重复调用（如切换抠图模式）直接返回缓存，不再推理。
+ * 失败（模型加载失败等）也缓存为 'failed'，避免每次切换都重试。
  */
 export async function generateBackgroundMask(image: SourceImage): Promise<Uint8Array> {
-  const session = await getSession()
-  const ort = ortModule!
-  const input = preprocess(image)
-  const feeds = {
-    [session.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, INPUT_SIZE, INPUT_SIZE]),
+  const key = imageKey(image)
+  const cached = maskCache.get(key)
+  if (cached !== undefined) {
+    if (cached === 'failed') throw new Error('AI 抠图失败（已缓存）')
+    return cached
   }
-  const out = await session.run(feeds)
-  // outputNames[0] = 最终融合 saliency map（已 sigmoid），1=前景
-  const prob = out[session.outputNames[0]].data as Float32Array
-  const upsampled = upsampleMask(prob, INPUT_SIZE, INPUT_SIZE, image.width, image.height)
-  const binarized = binarizeToBackgroundMask(upsampled, THRESHOLD)
-  // 空洞填充：AI 在主体内部产生的孤立背景区域按面积处理——大面积误判镂空
-  // 翻转为前景（保证图案整体连通），小面积保留为细节（u2netp 对主体内与
-  // 背景同色的细节区易漏标，全填会丢失眼睛/花纹等特征）
-  return fillBackgroundHoles(
-    binarized,
-    image.width,
-    image.height,
-    Math.round(image.width * image.height * HOLE_MIN_AREA_RATIO),
-  )
+  try {
+    const session = await getSession()
+    const ort = ortModule!
+    const input = preprocess(image)
+    const feeds = {
+      [session.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, INPUT_SIZE, INPUT_SIZE]),
+    }
+    const out = await session.run(feeds)
+    // outputNames[0] = 最终融合 saliency map（已 sigmoid），1=前景
+    const prob = out[session.outputNames[0]].data as Float32Array
+    const upsampled = upsampleMask(prob, INPUT_SIZE, INPUT_SIZE, image.width, image.height)
+    const binarized = binarizeToBackgroundMask(upsampled, THRESHOLD)
+    // 空洞填充：AI 在主体内部产生的孤立背景区域按面积处理——大面积误判镂空
+    // 翻转为前景（保证图案整体连通），小面积保留为细节（u2netp 对主体内与
+    // 背景同色的细节区易漏标，全填会丢失眼睛/花纹等特征）
+    const mask = fillBackgroundHoles(
+      binarized,
+      image.width,
+      image.height,
+      Math.round(image.width * image.height * HOLE_MIN_AREA_RATIO),
+    )
+    maskCache.set(key, mask)
+    return mask
+  } catch (err) {
+    maskCache.set(key, 'failed')
+    throw err
+  }
+}
+
+/**
+ * 已缓存 mask 查询：图命中缓存返回 mask（含 'failed'），未命中返回 null。
+ * App 切换抠图模式时先查缓存，命中立即转换，不命中才显示加载态。
+ */
+export function getCachedMask(image: SourceImage): Uint8Array | 'failed' | null {
+  return maskCache.get(imageKey(image)) ?? null
 }
