@@ -38,6 +38,7 @@ function ortWasmPlugin(): Plugin {
 }
 
 export default defineConfig({
+  base: '/pindu/', // GitHub Pages 子路径部署（https://xujianxin179.github.io/pindu/）
   plugins: [
     react(),
     ortWasmPlugin(),
