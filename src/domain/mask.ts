@@ -49,6 +49,35 @@ export function binarizeToBackgroundMask(prob: Float32Array, threshold: number):
 }
 
 /**
+ * 前景膨胀：把前景（0）向 4-邻域扩张 1px，背景（非 0）反向收缩 1px。
+ * 输入三态 mask（0=前景，1=外部背景，2=内部细节），输出同态三态。
+ * 用于 AI 低分辨率（320x320）二值化后：模型在主体边界概率模糊，
+ * 0.5 阈值会切掉贴边部位/头发/半透明边缘；膨胀一圈把边界糊区拉回前景，
+ * 上采样放大后等价于源图 1-3px，贴边主体不再被误抠。原地返回新 mask。
+ */
+export function dilateForeground(mask: Uint8Array, width: number, height: number): Uint8Array {
+  const out = new Uint8Array(mask.length)
+  if (mask.length === 0) return out
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x
+      // 前景像素本身保留；背景像素若 4-邻域有前景则被扩张为前景
+      if (mask[i] === 0) {
+        out[i] = 0
+        continue
+      }
+      let hasFg = false
+      if (x > 0 && mask[i - 1] === 0) hasFg = true
+      if (x < width - 1 && mask[i + 1] === 0) hasFg = true
+      if (y > 0 && mask[i - width] === 0) hasFg = true
+      if (y < height - 1 && mask[i + width] === 0) hasFg = true
+      out[i] = hasFg ? 0 : mask[i]
+    }
+  }
+  return out
+}
+
+/**
  * 空洞填充：把"不与图像边缘连通的背景区域"按面积处理。
  * 边缘连通背景（真实外围背景）一律保留为 1；
  * 内部洞（被前景包围的背景区域）：面积 >= minArea 的填为前景（0），

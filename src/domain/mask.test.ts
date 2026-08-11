@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { upsampleMask, binarizeToBackgroundMask, fillBackgroundHoles } from './mask'
+import { upsampleMask, binarizeToBackgroundMask, fillBackgroundHoles, dilateForeground } from './mask'
 
 describe('upsampleMask（双线性上采样，角点对齐）', () => {
   it('尺寸相同时原样返回', () => {
@@ -228,5 +228,72 @@ describe('fillBackgroundHoles（主体内部背景空洞填充）', () => {
 
   it('空 mask 返回空', () => {
     expect([...fillBackgroundHoles(new Uint8Array(0), 0, 0)]).toEqual([])
+  })
+})
+
+describe('dilateForeground（前景膨胀，贴边主体防误抠）', () => {
+  // mask 语义：0=前景，1=背景；膨胀后前景向外扩 1px
+  const M = (rows: number[][]): number[] => rows.flat()
+
+  it('孤立前景像素向 4 邻域膨胀一圈', () => {
+    // 3x3：中心 0 前景，膨胀后十字扩散（角不扩散，4-邻域）
+    const mask = new Uint8Array(
+      M([
+        [1, 1, 1],
+        [1, 0, 1],
+        [1, 1, 1],
+      ]),
+    )
+    expect([...dilateForeground(mask, 3, 3)]).toEqual(
+      M([
+        [1, 0, 1],
+        [0, 0, 0],
+        [1, 0, 1],
+      ]),
+    )
+  })
+
+  it('前景与背景边界：前景向背景扩张 1px', () => {
+    // 4x3：上半前景（0）、下半背景（1），膨胀后背景行 2 变前景
+    const mask = new Uint8Array(
+      M([
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [1, 1, 1, 1],
+      ]),
+    )
+    expect([...dilateForeground(mask, 4, 3)]).toEqual(
+      M([
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+      ]),
+    )
+  })
+
+  it('贴边前景扩张到边缘（不越界）', () => {
+    // 2x2：左上角前景，膨胀后十字扩散（对角 (1,1) 不扩散，4-邻域）
+    const mask = new Uint8Array(
+      M([
+        [0, 1],
+        [1, 1],
+      ]),
+    )
+    expect([...dilateForeground(mask, 2, 2)]).toEqual(
+      M([
+        [0, 0],
+        [0, 1],
+      ]),
+    )
+  })
+
+  it('全背景 mask 不变', () => {
+    const mask = new Uint8Array(M([[1, 1, 1], [1, 1, 1], [1, 1, 1]]))
+    expect([...dilateForeground(mask, 3, 3)]).toEqual([...mask])
+  })
+
+  it('全前景 mask 不变', () => {
+    const mask = new Uint8Array(M([[0, 0, 0], [0, 0, 0], [0, 0, 0]]))
+    expect([...dilateForeground(mask, 3, 3)]).toEqual([...mask])
   })
 })

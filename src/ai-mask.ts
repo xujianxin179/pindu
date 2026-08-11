@@ -5,13 +5,13 @@
  * 输入 [1,3,320,320] NCHW float32（ImageNet 归一化）；输出 7 个 [1,1,320,320] tensor，
  * outputNames[0] 为最终融合 saliency map（值 [0,1] 已 sigmoid，1=前景）。
  */
-import { binarizeToBackgroundMask, fillBackgroundHoles, upsampleMask } from './domain/mask'
+import { binarizeToBackgroundMask, dilateForeground, fillBackgroundHoles, upsampleMask } from './domain/mask'
 import type { SourceImage } from './domain/types'
 
 const MODEL_URL = '/models/u2netp.onnx'
 const INPUT_SIZE = 320
-/** 前景概率阈值：prob >= 0.5 判为前景。 */
-const THRESHOLD = 0.5
+/** 前景概率阈值：prob >= 阈值判为前景。u2netp 背景概率通常 <0.1，降到 0.4 保住边界糊区（prob 0.4-0.5），几乎不增加背景残留。 */
+const THRESHOLD = 0.4
 /**
  * onnxruntime 的 wasm 文件路径前缀。loader 默认从脚本 URL 推断（vite 预构建后
  * 指向 node_modules，dev/prod 都会 404 拿到 HTML 导致 wasm 编译失败），
@@ -104,11 +104,14 @@ export async function generateBackgroundMask(image: SourceImage): Promise<Uint8A
     const prob = out[session.outputNames[0]].data as Float32Array
     const upsampled = upsampleMask(prob, INPUT_SIZE, INPUT_SIZE, image.width, image.height)
     const binarized = binarizeToBackgroundMask(upsampled, THRESHOLD)
+    // 前景膨胀 1px（低分辨率下做，放大后等价源图 1-3px）：主体边界概率模糊，
+    // 贴边部位/头发/半透明边缘易被 0.4 阈值切掉，膨胀把边界糊区拉回前景
+    const dilated = dilateForeground(binarized, image.width, image.height)
     // 空洞填充：AI 在主体内部产生的孤立背景区域按面积处理——大面积误判镂空
     // 翻转为前景（0，保证图案整体连通），小面积标记为细节（2，转换时按自身
     // 颜色量化成珠子，u2netp 对主体内与背景同色的细节区易漏标）
     const mask = fillBackgroundHoles(
-      binarized,
+      dilated,
       image.width,
       image.height,
       Math.round(image.width * image.height * HOLE_MIN_AREA_RATIO),
