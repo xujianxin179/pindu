@@ -490,6 +490,53 @@ describe('convertImageToPattern 去背景', () => {
     ])
     expect(result.activePalette).toEqual(['W', 'R'])
   })
+
+  it('提供 backgroundMask（外部 AI 抠图）时优先使用，忽略内部颜色检测', () => {
+    // 3x3 全红图：flood fill 会把红判为背景（众数色）；外部 mask 全 0（全前景）→ 全红珠
+    const R = { r: 255, g: 0, b: 0 }
+    const image: SourceImage = {
+      width: 3,
+      height: 3,
+      pixels: Array.from({ length: 9 }, () => ({ ...R })),
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 3, height: 3, removeBackground: true, backgroundMask: new Uint8Array(9) },
+      bgPalette,
+    )
+    expect(result.pattern.cells).toEqual(['R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R'])
+  })
+
+  it('backgroundMask 全 1（全背景）时全部判空，不依赖颜色', () => {
+    // 3x3 白图，外部 mask 全 1 → 全 null（flood fill 也会如此，但这里验证走外部路径）
+    const W = { r: 255, g: 255, b: 255 }
+    const image: SourceImage = {
+      width: 3,
+      height: 3,
+      pixels: Array.from({ length: 9 }, () => ({ ...W })),
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 3, height: 3, removeBackground: true, backgroundMask: new Uint8Array(9).fill(1) },
+      bgPalette,
+    )
+    expect(result.pattern.cells).toEqual([null, null, null, null, null, null, null, null, null])
+  })
+
+  it('removeBackground 关闭时忽略 backgroundMask', () => {
+    const R = { r: 255, g: 0, b: 0 }
+    const image: SourceImage = {
+      width: 1,
+      height: 1,
+      pixels: [{ ...R }],
+    }
+    const result = convertImageToPattern(
+      image,
+      { width: 1, height: 1, removeBackground: false, backgroundMask: new Uint8Array(1).fill(1) },
+      bgPalette,
+    )
+    expect(result.pattern.cells).toEqual(['R'])
+  })
 })
 
 describe('cropImageToSourceImage（手动裁剪）', () => {

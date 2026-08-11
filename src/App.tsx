@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, type ChangeEvent } from 'react'
 import { convertImageToPattern, computeColorCounts, cropImageToSourceImage } from './domain/convert'
+import { generateBackgroundMask } from './ai-mask'
 import { MARD_PALETTE } from './domain/palette'
 import type { ColorId, ColorPalette, ConvertResult, Pattern, RGB, SourceImage } from './domain/types'
 import { exportSheetPng, exportSheetPdf, shareSheet } from './sheet-export'
@@ -345,6 +346,8 @@ function App() {
   const [gridHeight, setGridHeight] = useState<number | ''>('')
   const [maxColors, setMaxColors] = useState<number | ''>(DEFAULT_MAX_COLORS)
   const [removeBackground, setRemoveBackground] = useState(true)
+  /** AI 抠图背景 mask（源图像素级，1=背景）；null=未生成（等待中），'failed'=AI 失败（回退颜色检测） */
+  const [bgMask, setBgMask] = useState<Uint8Array | 'failed' | null>(null)
   const [result, setResult] = useState<ConvertResult | null>(null)
   const [highlightId, setHighlightId] = useState<ColorId | null>(null)
   const [showColorLabels, setShowColorLabels] = useState(true)
@@ -365,15 +368,41 @@ function App() {
     setWorks(await storeRef.current!.list())
   }
 
+  /** AI 智能抠图：activeImage 变化（导入/裁剪确认）后异步生成背景 mask。 */
+  useEffect(() => {
+    setBgMask(null)
+    if (!activeImage || cropMode || !removeBackground) return
+    let cancelled = false
+    generateBackgroundMask(activeImage)
+      .then((m) => {
+        if (!cancelled) setBgMask(m)
+      })
+      .catch(() => {
+        // 模型加载失败等：回退到内部颜色检测（flood fill）
+        if (!cancelled) setBgMask('failed')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeImage, cropMode, removeBackground])
+
   useEffect(() => {
     if (!activeImage || cropMode || gridWidth === '' || gridHeight === '' || maxColors === '') return
+    if (removeBackground && bgMask === null) return // AI 抠图中，生成后再转换
     const r = convertImageToPattern(
       activeImage,
-      { width: gridWidth, height: gridHeight, maxColors, removeBackground },
+      {
+        width: gridWidth,
+        height: gridHeight,
+        maxColors,
+        removeBackground,
+        // AI 失败（'failed'）时不传，回退 flood fill
+        backgroundMask: bgMask === 'failed' || bgMask === null ? undefined : bgMask,
+      },
       MARD_PALETTE,
     )
     setResult(r)
-  }, [activeImage, cropMode, gridWidth, gridHeight, maxColors, removeBackground])
+  }, [activeImage, cropMode, gridWidth, gridHeight, maxColors, removeBackground, bgMask])
 
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -616,7 +645,11 @@ function App() {
 
           {!result && (
             <div className="canvas-wrap">
-              <p className="empty">从右上角导入一张图片，开始拼豆。</p>
+              {removeBackground && activeImage && bgMask === null ? (
+                <p className="empty">正在智能抠图中…</p>
+              ) : (
+                <p className="empty">从右上角导入一张图片，开始拼豆。</p>
+              )}
             </div>
           )}
         </>
