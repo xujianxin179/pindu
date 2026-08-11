@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { convertImageToPattern, computeColorCounts, dominantEdgeColor } from './convert'
+import {
+  convertImageToPattern,
+  computeColorCounts,
+  cropImageToSourceImage,
+  dominantEdgeColor,
+} from './convert'
 import type { ColorPalette, Pattern, SourceImage } from './types'
 
 // 用一个独立的小色板做 worked example，expected 值来自手工推理，
@@ -384,5 +389,44 @@ describe('convertImageToPattern 去背景', () => {
     )
     expect(result.pattern.cells).toEqual([null, null, null, 'R'])
     expect(result.activePalette).toEqual(['R'])
+  })
+})
+
+describe('cropImageToSourceImage（手动裁剪）', () => {
+  const image: SourceImage = {
+    width: 3,
+    height: 2,
+    pixels: [
+      { r: 255, g: 0, b: 0 }, // 红
+      { r: 0, g: 255, b: 0 }, // 绿
+      { r: 0, g: 0, b: 255 }, // 蓝
+      { r: 255, g: 255, b: 255 }, // 白
+      { r: 255, g: 255, b: 0 }, // 黄
+      { r: 0, g: 255, b: 255 }, // 青
+    ],
+  }
+
+  it('按行优先截取指定矩形区域', () => {
+    // 3x2 图裁 x:1..2, y:0..1 -> 右 2 列：绿/蓝 + 黄/青
+    const out = cropImageToSourceImage(image, { x: 1, y: 0, width: 2, height: 2 })
+    expect(out.width).toBe(2)
+    expect(out.height).toBe(2)
+    expect(out.pixels).toEqual([
+      { r: 0, g: 255, b: 0 },
+      { r: 0, g: 0, b: 255 },
+      { r: 255, g: 255, b: 0 },
+      { r: 0, g: 255, b: 255 },
+    ])
+  })
+
+  it('越界区域被裁剪到图片范围内', () => {
+    // x:2 起、宽 3 高 2 越界：clamp 后只剩 (row1, col2) 一个像素
+    const out = cropImageToSourceImage(image, { x: 2, y: 1, width: 3, height: 2 })
+    expect(out).toEqual({ width: 1, height: 1, pixels: [{ r: 0, g: 255, b: 255 }] })
+  })
+
+  it('裁全图返回同尺寸副本', () => {
+    const out = cropImageToSourceImage(image, { x: 0, y: 0, width: 3, height: 2 })
+    expect(out).toEqual(image)
   })
 })

@@ -197,3 +197,25 @@ function colorDist(a: RGB, b: RGB): number {
   const db = a.b - b.b
   return dr * dr + dg * dg + db * db
 }
+
+/**
+ * 手动裁剪：从 image 截取 rect（源图像素坐标）矩形区域生成新图。
+ * 越界部分 clamp 到图片范围内；空区域返回 0 尺寸图。
+ * 用于"导入图片后先手动裁剪，再去背景/转换"的流程。
+ */
+export function cropImageToSourceImage(
+  image: SourceImage,
+  rect: { x: number; y: number; width: number; height: number },
+): SourceImage {
+  const x = Math.max(0, Math.min(Math.floor(rect.x), image.width - 1))
+  const y = Math.max(0, Math.min(Math.floor(rect.y), image.height - 1))
+  const width = Math.max(0, Math.min(Math.round(rect.width), image.width - x))
+  const height = Math.max(0, Math.min(Math.round(rect.height), image.height - y))
+  const pixels: RGB[] = []
+  for (let row = y; row < y + height; row++) {
+    for (let col = x; col < x + width; col++) {
+      pixels.push(image.pixels[row * image.width + col])
+    }
+  }
+  return { width, height, pixels }
+}
