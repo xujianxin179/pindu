@@ -23,12 +23,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      # wasm 超 Pages 单文件 25MiB 限制：gzip 压缩 + _headers 声明 Content-Encoding
+      # CPU wasm 13.5MB < 25MiB 单文件限制，直接上传原始文件。
+      # 注意：不能 gzip 压缩 + Content-Encoding 声明——部分安卓 WebView 不自动
+      # 解压 wasm 请求的 gzip，WebAssembly.instantiate 会收到压缩数据报
+      # "expected magic word 00 61 73 6d, found 1f 8b"（1f 8b = gzip 头）。
       - run: |
-          gzip -k -9 dist/ort-wasm/ort-wasm-simd-threaded.wasm
-          mv dist/ort-wasm/ort-wasm-simd-threaded.wasm.gz dist/ort-wasm/ort-wasm-simd-threaded.wasm
           rm -f dist/assets/ort-wasm-simd-threaded.jsep-*.wasm dist/assets/ort-wasm-simd-threaded-*.wasm
-          printf '/ort-wasm/ort-wasm-simd-threaded.wasm\n  Content-Encoding: gzip\n  Content-Type: application/wasm\n' > dist/_headers
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
