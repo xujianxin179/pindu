@@ -38,7 +38,8 @@ function ortWasmPlugin(): Plugin {
 }
 
 export default defineConfig({
-  base: '/pindu/', // GitHub Pages 子路径部署（https://xujianxin179.github.io/pindu/）
+  // 部署根路径：GitHub Pages 用 /pindu/（Actions 里设 BASE_PATH），Cloudflare Pages 用 /（默认）
+  base: process.env.BASE_PATH ?? '/',
   plugins: [
     react(),
     ortWasmPlugin(),

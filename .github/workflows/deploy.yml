@@ -25,6 +25,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          BASE_PATH: /pindu/ # GitHub Pages 子路径；Cloudflare Pages 默认根路径
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
