@@ -5,7 +5,7 @@
  * 输入 [1,3,320,320] NCHW float32（ImageNet 归一化）；输出 7 个 [1,1,320,320] tensor，
  * outputNames[0] 为最终融合 saliency map（值 [0,1] 已 sigmoid，1=前景）。
  */
-import { binarizeToBackgroundMask, upsampleMask } from './domain/mask'
+import { binarizeToBackgroundMask, fillBackgroundHoles, upsampleMask } from './domain/mask'
 import type { SourceImage } from './domain/types'
 
 const MODEL_URL = '/models/u2netp.onnx'
@@ -80,5 +80,8 @@ export async function generateBackgroundMask(image: SourceImage): Promise<Uint8A
   // outputNames[0] = 最终融合 saliency map（已 sigmoid），1=前景
   const prob = out[session.outputNames[0]].data as Float32Array
   const upsampled = upsampleMask(prob, INPUT_SIZE, INPUT_SIZE, image.width, image.height)
-  return binarizeToBackgroundMask(upsampled, THRESHOLD)
+  const binarized = binarizeToBackgroundMask(upsampled, THRESHOLD)
+  // 空洞填充：AI 在主体内部产生的孤立背景区域（不连通图像边缘）翻转为前景，
+  // 保证图案主体内部无空格、整体连通（u2netp 对镂空/高对比主体易漏标）
+  return fillBackgroundHoles(binarized, image.width, image.height)
 }

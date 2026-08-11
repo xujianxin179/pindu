@@ -47,3 +47,49 @@ export function binarizeToBackgroundMask(prob: Float32Array, threshold: number):
   }
   return out
 }
+
+/**
+ * 空洞填充：把"不与图像边缘连通的背景区域"翻转为前景（0）。
+ * 只保留与边缘连通的背景（真实外围背景），主体内部被前景包围的背景洞全部填掉，
+ * 保证抠图主体内部无空洞、图案整体连通。从边缘背景像素做 BFS（连通域），
+ * 未达的背景像素即空洞。原地返回新 mask，输入不变。
+ */
+export function fillBackgroundHoles(mask: Uint8Array, width: number, height: number): Uint8Array {
+  const out = new Uint8Array(mask.length)
+  if (mask.length === 0) return out
+  // 连通标记：1=与边缘连通的背景像素；队列上界同 flood fill（每像素最多被 4 邻居各推一次 + 边缘种子）
+  const connected = new Uint8Array(mask.length)
+  const queue = new Uint32Array(mask.length * 4 + 2 * (width + height))
+  let head = 0
+  let tail = 0
+  const push = (i: number) => {
+    queue[tail++] = i
+  }
+  // 种子：四条边上的背景像素
+  for (let x = 0; x < width; x++) {
+    if (mask[x] === 1) push(x)
+    if (mask[(height - 1) * width + x] === 1) push((height - 1) * width + x)
+  }
+  for (let y = 1; y < height - 1; y++) {
+    if (mask[y * width] === 1) push(y * width)
+    if (mask[y * width + width - 1] === 1) push(y * width + width - 1)
+  }
+  while (head < tail) {
+    const idx = queue[head++]
+    if (connected[idx]) continue
+    connected[idx] = 1
+    const x = idx % width
+    const y = (idx - x) / width
+    const tryPush = (to: number) => {
+      if (!connected[to] && mask[to] === 1) push(to)
+    }
+    if (x > 0) tryPush(idx - 1)
+    if (x < width - 1) tryPush(idx + 1)
+    if (y > 0) tryPush(idx - width)
+    if (y < height - 1) tryPush(idx + width)
+  }
+  for (let i = 0; i < mask.length; i++) {
+    out[i] = connected[i] ? 1 : 0
+  }
+  return out
+}

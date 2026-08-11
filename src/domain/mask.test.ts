@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { upsampleMask, binarizeToBackgroundMask } from './mask'
+import { upsampleMask, binarizeToBackgroundMask, fillBackgroundHoles } from './mask'
 
 describe('upsampleMask（双线性上采样，角点对齐）', () => {
   it('尺寸相同时原样返回', () => {
@@ -83,5 +83,97 @@ describe('binarizeToBackgroundMask（前景概率 -> 背景 mask）', () => {
   it('阈值取 0 时全部前景（概率恒 >= 0）', () => {
     const prob = new Float32Array([0.0, 0.001])
     expect([...binarizeToBackgroundMask(prob, 0)]).toEqual([0, 0])
+  })
+})
+
+describe('fillBackgroundHoles（主体内部背景空洞填充）', () => {
+  // mask 语义 1=背景 0=前景；只填"不与图像边缘连通的背景区域"，边缘连通背景保留
+  const M = (rows: number[][]): number[] => rows.flat()
+
+  it('环中心被前景包围的背景洞被填充为前景', () => {
+    // 4x4：边缘一圈前景（主体环），中心 2x2 背景（镂空洞，不连通边缘）
+    const mask = new Uint8Array(
+      M([
+        [0, 0, 0, 0],
+        [0, 1, 1, 0],
+        [0, 1, 1, 0],
+        [0, 0, 0, 0],
+      ]),
+    )
+    expect([...fillBackgroundHoles(mask, 4, 4)]).toEqual([
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+    ])
+  })
+
+  it('与边缘连通的背景保留，仅内部孤立洞被填', () => {
+    // 5x5：左侧 2 列背景（连通边缘）保留；(3,1) 处背景被前景包围 → 填
+    const mask = new Uint8Array(
+      M([
+        [1, 1, 0, 0, 0],
+        [1, 1, 0, 1, 0],
+        [1, 1, 0, 0, 0],
+        [1, 1, 0, 0, 0],
+        [1, 1, 0, 0, 0],
+      ]),
+    )
+    expect([...fillBackgroundHoles(mask, 5, 5)]).toEqual(
+      M([
+        [1, 1, 0, 0, 0],
+        [1, 1, 0, 0, 0],
+        [1, 1, 0, 0, 0],
+        [1, 1, 0, 0, 0],
+        [1, 1, 0, 0, 0],
+      ]),
+    )
+  })
+
+  it('贴边主体内部的洞同样被填（洞不接触边缘）', () => {
+    // 5x3：主体贴满第一行，(2,1)(3,1) 背景洞被前景包围 → 填
+    const mask = new Uint8Array(
+      M([
+        [0, 0, 0, 0, 0],
+        [0, 1, 1, 0, 0],
+        [0, 0, 0, 0, 0],
+      ]),
+    )
+    expect([...fillBackgroundHoles(mask, 5, 3)]).toEqual([
+      0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0,
+    ])
+  })
+
+  it('全背景 mask 不变（全部连通边缘）', () => {
+    const mask = new Uint8Array(
+      M([
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 1],
+      ]),
+    )
+    expect([...fillBackgroundHoles(mask, 3, 3)]).toEqual([...mask])
+  })
+
+  it('全前景 mask 不变', () => {
+    const mask = new Uint8Array(
+      M([
+        [0, 0, 0],
+        [0, 0, 0],
+        [0, 0, 0],
+      ]),
+    )
+    expect([...fillBackgroundHoles(mask, 3, 3)]).toEqual([...mask])
+  })
+
+  it('单行图（所有像素都是边缘）背景全部保留', () => {
+    const mask = new Uint8Array(M([[1, 0, 1, 0, 1]]))
+    expect([...fillBackgroundHoles(mask, 5, 1)]).toEqual([1, 0, 1, 0, 1])
+  })
+
+  it('空 mask 返回空', () => {
+    expect([...fillBackgroundHoles(new Uint8Array(0), 0, 0)]).toEqual([])
   })
 })
