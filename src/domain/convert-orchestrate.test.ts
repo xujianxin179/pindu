@@ -3,8 +3,13 @@
 import { describe, expect, it } from 'vitest'
 import { prepareConvert } from './convert-orchestrate'
 import type { ConvertSnapshot } from './convert-orchestrate'
+import type { MaskResult } from './mask-cache'
 
 const MASK = new Uint8Array([0, 1, 2])
+
+function maskResult(status: MaskResult['status']): MaskResult {
+  return status === 'ok' ? { status: 'ok', mask: MASK } : { status: 'failed', error: '测试失败' }
+}
 
 function snap(over: Partial<ConvertSnapshot> = {}): ConvertSnapshot {
   return {
@@ -18,7 +23,7 @@ function snap(over: Partial<ConvertSnapshot> = {}): ConvertSnapshot {
     gridHeight: 8,
     maxColors: 12,
     bgMode: 'ai',
-    bgMask: MASK,
+    bgMask: maskResult('ok'),
     ...over,
   }
 }
@@ -49,7 +54,7 @@ describe('prepareConvert', () => {
   })
 
   it('AI 模式 + failed：removeBackground true 但不传 mask（convert 内部回退 flood fill）', () => {
-    const r = prepareConvert(snap({ bgMask: 'failed' }))!
+    const r = prepareConvert(snap({ bgMask: maskResult('failed') }))!
     expect(r.params.removeBackground).toBe(true)
     expect(r.params.backgroundMask).toBeUndefined()
   })
@@ -61,9 +66,9 @@ describe('prepareConvert', () => {
   })
 
   it('mask 长度是否匹配不在此判断（convert 内部防御回退），成功态原样透传', () => {
-    const short = new Uint8Array([0])
+    const short = { status: 'ok' as const, mask: new Uint8Array([0]) }
     const r = prepareConvert(snap({ bgMask: short }))!
-    expect(r.params.backgroundMask).toBe(short)
+    expect(r.params.backgroundMask).toBe(short.mask)
   })
 
   it('gate 通过后 image 与网格参数透传', () => {

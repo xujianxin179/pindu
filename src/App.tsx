@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect, useMemo, type ChangeEvent } from 'react'
 import { convertImageToPattern, computeColorCounts, cropImageToSourceImage } from './domain/convert'
 import { prepareConvert } from './domain/convert-orchestrate'
+import { applyDrag, hitHandle, type CropRect } from './domain/crop-geometry'
 import { generateBackgroundMask, getCachedMask } from './ai-mask'
+import type { MaskResult } from './domain/mask-cache'
 import { MARD_PALETTE } from './domain/palette'
 import type { ColorId, ColorPalette, ConvertResult, Pattern, RGB, SourceImage } from './domain/types'
 import { exportSheetPng, exportSheetPdf, shareSheet } from './sheet-export'
-import { drawGrid, CELL_SIZE, GRID_PREVIEW } from './render-grid'
+import { drawGrid, sizeCanvas, CELL_SIZE, GRID_PREVIEW } from './render-grid'
 import { IdbWorkStore } from './idb-work-store'
 import type { Work, WorkStore, WorkSummary } from './domain/work'
 import './index.css'
@@ -76,9 +78,13 @@ function PatternCanvas({
   useEffect(() => {
     const canvas = ref.current
     if (!canvas) return
-    const ctx = canvas.getContext('2d')!
-    canvas.width = pattern.width * CELL_SIZE
-    canvas.height = pattern.height * CELL_SIZE
+    // 装配（dpr 缩放 + style 尺寸）与绘制走统一路径：高分屏预览不再糊
+    const ctx = sizeCanvas(
+      canvas,
+      pattern.width * CELL_SIZE,
+      pattern.height * CELL_SIZE,
+      GRID_PREVIEW.emptyColor!,
+    )
     drawGrid(ctx, pattern, palette, {
       offset: { x: 0, y: 0 },
       ...GRID_PREVIEW,
@@ -89,9 +95,6 @@ function PatternCanvas({
 
   return <canvas ref={ref} />
 }
-
-/** 裁剪矩形（原图像素坐标）。 */
-type CropRect = { x: number; y: number; width: number; height: number }
 
 /** 裁剪框最小边长 / 手柄命中半径（原图像素）。 */
 const MIN_CROP = 4
@@ -154,31 +157,9 @@ function CropView({
   }
 
   /** 命中四角手柄（半径 HANDLE_HIT 原图像素）返回手柄名，否则 null。 */
-  function hitHandle(
-    pos: { x: number; y: number },
-    c: CropRect,
-  ): 'nw' | 'ne' | 'sw' | 'se' | null {
-    const near = (a: number, b: number) => Math.abs(a - b) <= HANDLE_HIT
-    if (near(pos.x, c.x) && near(pos.y, c.y)) return 'nw'
-    if (near(pos.x, c.x + c.width) && near(pos.y, c.y)) return 'ne'
-    if (near(pos.x, c.x) && near(pos.y, c.y + c.height)) return 'sw'
-    if (near(pos.x, c.x + c.width) && near(pos.y, c.y + c.height)) return 'se'
-    return null
-  }
-
-  /** 限制裁剪框在图片范围内且不小于最小边长。 */
-  function clampCrop(next: CropRect): CropRect {
-    const min = Math.min(MIN_CROP, image.width, image.height)
-    const x = Math.max(0, Math.min(next.x, image.width - min))
-    const y = Math.max(0, Math.min(next.y, image.height - min))
-    const width = Math.max(min, Math.min(next.width, image.width - x))
-    const height = Math.max(min, Math.min(next.height, image.height - y))
-    return { x, y, width, height }
-  }
-
   function onPointerDown(e: React.PointerEvent) {
     const pos = toImagePos(e)
-    const handle = hitHandle(pos, crop)
+    const handle = hitHandle(pos, crop, HANDLE_HIT)
     if (handle) {
       dragRef.current = { mode: handle, startX: pos.x, startY: pos.y, crop }
     } else if (
@@ -198,26 +179,8 @@ function CropView({
     const drag = dragRef.current
     if (!drag) return
     const pos = toImagePos(e)
-    const dx = pos.x - drag.startX
-    const dy = pos.y - drag.startY
-    const c = drag.crop
-    switch (drag.mode) {
-      case 'move':
-        setCrop(clampCrop({ x: c.x + dx, y: c.y + dy, width: c.width, height: c.height }))
-        break
-      case 'se':
-        setCrop(clampCrop({ ...c, width: c.width + dx, height: c.height + dy }))
-        break
-      case 'nw':
-        setCrop(clampCrop({ x: c.x + dx, y: c.y + dy, width: c.width - dx, height: c.height - dy }))
-        break
-      case 'ne':
-        setCrop(clampCrop({ x: c.x, y: c.y + dy, width: c.width + dx, height: c.height - dy }))
-        break
-      case 'sw':
-        setCrop(clampCrop({ x: c.x + dx, y: c.y, width: c.width - dx, height: c.height + dy }))
-        break
-    }
+    const min = Math.min(MIN_CROP, image.width, image.height)
+    setCrop(applyDrag(drag.mode, drag, pos, { width: image.width, height: image.height }, min))
   }
 
   function onPointerUp() {
@@ -353,8 +316,8 @@ function App() {
   const [maxColors, setMaxColors] = useState<number | ''>(DEFAULT_MAX_COLORS)
   /** 抠图方式：'ai'=AI 语义分割（失败回退颜色检测），'off'=不抠图 */
   const [bgMode, setBgMode] = useState<'ai' | 'off'>('ai')
-  /** AI 抠图背景 mask（源图像素级，1=背景）；null=未生成（等待中），'failed'=AI 失败（回退颜色检测） */
-  const [bgMask, setBgMask] = useState<Uint8Array | 'failed' | null>(null)
+  /** AI 抠图结果（ok 携带 mask / failed 携带错误）；null=未生成（等待中）。 */
+  const [bgMask, setBgMask] = useState<MaskResult | null>(null)
   /** AI 抠图失败原因（调试用，显示在界面上） */
   const [aiError, setAiError] = useState<string | null>(null)
   const [result, setResult] = useState<ConvertResult | null>(null)
@@ -389,18 +352,13 @@ function App() {
     setAiError(null)
     setBgMask(getCachedMask(activeImage))
     let cancelled = false
-    generateBackgroundMask(activeImage)
-      .then((m) => {
-        if (!cancelled) setBgMask(m)
-      })
-      .catch((err) => {
-        // 模型加载失败等：回退到内部颜色检测（flood fill）
-        console.error('AI 抠图失败:', err)
-        if (!cancelled) {
-          setBgMask('failed')
-          setAiError(String(err))
-        }
-      })
+    generateBackgroundMask(activeImage).then((m) => {
+      if (!cancelled) {
+        setBgMask(m)
+        // 失败原因从结果派生（不再 throw）：UI 显示具体错误（模型加载失败等）
+        setAiError(m.status === 'failed' ? m.error : null)
+      }
+    })
     return () => {
       cancelled = true
     }
@@ -619,7 +577,7 @@ function App() {
                     </button>
                   )}
                 </p>
-                {bgMask === 'failed' && (
+                {bgMask?.status === 'failed' && (
                   <p className="grid-meta">AI 抠图失败，已用颜色检测替代{aiError ? `（${aiError.slice(0, 200)}）` : ''}</p>
                 )}
               </div>

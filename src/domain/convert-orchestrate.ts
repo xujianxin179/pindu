@@ -3,6 +3,7 @@
 // 返回 null = 本次不转换（gate 不过 / AI 等待中，等后台预计算完成后重跑）。
 
 import type { ConvertParams, SourceImage } from './types'
+import type { MaskResult } from './mask-cache'
 
 export interface ConvertSnapshot {
   image: SourceImage | null
@@ -11,7 +12,7 @@ export interface ConvertSnapshot {
   gridHeight: number | ''
   maxColors: number | ''
   bgMode: 'ai' | 'off'
-  bgMask: Uint8Array | 'failed' | null
+  bgMask: MaskResult | null
 }
 
 export function prepareConvert(
@@ -28,9 +29,8 @@ export function prepareConvert(
   }
   if (bgMode !== 'off') {
     params.removeBackground = true
-    // 失败 'failed' 不传（convert 内部回退 flood fill）；成功态原样透传——
-    // 长度不匹配是 convert 内部防御（backgroundMask.length === pixels.length），外部不重复判断
-    if (bgMask !== 'failed' && bgMask !== null) params.backgroundMask = bgMask
+    // failed 不传（convert 内部回退 flood fill）；ok 透传 mask——长度不匹配是 convert 内部防御，外部不重复判断
+    if (bgMask?.status === 'ok') params.backgroundMask = bgMask.mask
   } else {
     params.removeBackground = false
   }

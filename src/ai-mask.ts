@@ -6,6 +6,8 @@
  * outputNames[0] 为最终融合 saliency map（值 [0,1] 已 sigmoid，1=前景）。
  */
 import { binarizeToBackgroundMask, dilateForeground, fillBackgroundHoles, upsampleMask } from './domain/mask'
+import { MaskCache, imageKey } from './domain/mask-cache'
+import type { BackgroundMask } from './domain/mask'
 import type { SourceImage } from './domain/types'
 
 const MODEL_URL = '/models/u2netp.onnx'
@@ -35,13 +37,13 @@ const HOLE_MIN_AREA_RATIO = 0.0025
 let ortModule: typeof import('onnxruntime-web') | null = null
 let sessionPromise: Promise<import('onnxruntime-web').InferenceSession> | null = null
 
-/** mask 缓存：key = 图内容哈希（width×height 像素 RGB），命中跳过重复推理。 */
-const maskCache = new Map<string, Uint8Array | 'failed'>()
+/** AI 抠图结果：ok 携带 mask，failed 携带错误信息（替换 'failed' 字符串 sentinel）。 */
+export type MaskResult =
+  | { status: 'ok'; mask: BackgroundMask }
+  | { status: 'failed'; error: string }
 
-/** 图内容指纹：尺寸 + 全部像素 RGB（字符串拼接）。 */
-function imageKey(image: SourceImage): string {
-  return `${image.width}x${image.height}:${image.pixels.map((p) => p.r << 16 | p.g << 8 | p.b).join(',')}`
-}
+/** mask 缓存：key = 图内容哈希（FNV-1a，LRU 驱逐）。可注入（测试用空缓存验证命中/驱逐）。 */
+export const maskCache = new MaskCache()
 
 /** 单例加载模型（首次调用创建，后续复用；失败后重置以便下次重试）。 */
 function getSession(): Promise<import('onnxruntime-web').InferenceSession> {
@@ -89,18 +91,15 @@ function preprocess(image: SourceImage): Float32Array {
 }
 
 /**
- * AI 智能抠图：返回源图像素级三态背景 mask（0=前景，1=外部背景→空格，2=内部细节洞→珠子颜色）。
+ * AI 智能抠图：返回源图像素级三态背景 mask（前景/外部背景/内部细节洞，语义见 domain/mask）。
  * 模型推理（wasm）在异步线程执行，首次调用需加载模型（~4.5MB，之后缓存复用）。
  * 结果按图内容缓存：同一张图重复调用（如切换抠图模式）直接返回缓存，不再推理。
- * 失败（模型加载失败等）也缓存为 'failed'，避免每次切换都重试。
+ * 失败（模型加载失败等）缓存为 failed 结果，避免每次切换都重试；不再 throw。
  */
-export async function generateBackgroundMask(image: SourceImage): Promise<Uint8Array> {
+export async function generateBackgroundMask(image: SourceImage): Promise<MaskResult> {
   const key = imageKey(image)
   const cached = maskCache.get(key)
-  if (cached !== undefined) {
-    if (cached === 'failed') throw new Error('AI 抠图失败（已缓存）')
-    return cached
-  }
+  if (cached !== undefined) return cached
   try {
     const session = await getSession()
     const ort = ortModule!
@@ -125,18 +124,20 @@ export async function generateBackgroundMask(image: SourceImage): Promise<Uint8A
       image.height,
       Math.round(image.width * image.height * HOLE_MIN_AREA_RATIO),
     )
-    maskCache.set(key, mask)
-    return mask
+    const result: MaskResult = { status: 'ok', mask }
+    maskCache.set(key, result)
+    return result
   } catch (err) {
-    maskCache.set(key, 'failed')
-    throw err
+    const result: MaskResult = { status: 'failed', error: String(err) }
+    maskCache.set(key, result)
+    return result
   }
 }
 
 /**
- * 已缓存 mask 查询：图命中缓存返回 mask（含 'failed'），未命中返回 null。
+ * 已缓存 mask 查询：图命中缓存返回 MaskResult（ok 携带 mask / failed 携带错误），未命中返回 null。
  * App 切换抠图模式时先查缓存，命中立即转换，不命中才显示加载态。
  */
-export function getCachedMask(image: SourceImage): Uint8Array | 'failed' | null {
+export function getCachedMask(image: SourceImage): MaskResult | null {
   return maskCache.get(imageKey(image)) ?? null
 }
