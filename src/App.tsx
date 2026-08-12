@@ -5,7 +5,7 @@ import { generateBackgroundMask, getCachedMask } from './ai-mask'
 import { MARD_PALETTE } from './domain/palette'
 import type { ColorId, ColorPalette, ConvertResult, Pattern, RGB, SourceImage } from './domain/types'
 import { exportSheetPng, exportSheetPdf, shareSheet } from './sheet-export'
-import { drawGrid, CELL_SIZE } from './render-grid'
+import { drawGrid, CELL_SIZE, GRID_PREVIEW } from './render-grid'
 import { IdbWorkStore } from './idb-work-store'
 import type { Work, WorkStore, WorkSummary } from './domain/work'
 import './index.css'
@@ -79,7 +79,12 @@ function PatternCanvas({
     const ctx = canvas.getContext('2d')!
     canvas.width = pattern.width * CELL_SIZE
     canvas.height = pattern.height * CELL_SIZE
-    drawGrid(ctx, pattern, palette, 0, 0, highlightId, '#f5f5f5', CELL_SIZE, showColorLabels)
+    drawGrid(ctx, pattern, palette, {
+      offset: { x: 0, y: 0 },
+      ...GRID_PREVIEW,
+      highlightId,
+      showColorLabels,
+    })
   }, [pattern, palette, highlightId, showColorLabels])
 
   return <canvas ref={ref} />

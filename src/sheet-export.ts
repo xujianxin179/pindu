@@ -3,13 +3,9 @@
 import { jsPDF } from 'jspdf'
 import { buildSheetLayout } from './domain/sheet'
 import { computeColorCounts } from './domain/convert'
-import { drawGrid } from './render-grid'
+import { drawGrid, GRID_SHEET, SHEET_CELL_SIZE } from './render-grid'
 import type { ColorId, ColorPalette, ConvertResult } from './domain/types'
 
-const GUIDE_INTERVAL = 5
-/** 导出图纸格子边长：16px 便于每格标注色号。 */
-const SHEET_CELL_SIZE = 16
-/** 图纸下方用色清单的行高。 */
 const LIST_ROW_HEIGHT = 20
 const LIST_MARGIN = 10
 /** 用色清单横向排列的列宽：色块 14 + 间距 + "色号 × 数量" 文本。 */
@@ -26,7 +22,6 @@ export function renderSheetToCanvas(
   const counts = computeColorCounts(pattern, activePalette)
   const layout = buildSheetLayout(pattern.width, pattern.height, {
     cellSize: SHEET_CELL_SIZE,
-    guideInterval: GUIDE_INTERVAL,
     showLabels: true,
     labelGutter: 20,
   })
@@ -45,7 +40,11 @@ export function renderSheetToCanvas(
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, layout.sheetWidth, layout.sheetHeight + listHeight)
 
-  drawGrid(ctx, pattern, palette, layout.gridX, layout.gridY, highlightId, '#ffffff', SHEET_CELL_SIZE)
+  drawGrid(ctx, pattern, palette, {
+    offset: { x: layout.gridX, y: layout.gridY },
+    ...GRID_SHEET,
+    highlightId,
+  })
 
   // 行列标号：列标在顶部留白区、行标在左侧留白区（各垂直/水平居中），不压格子
   if (layout.colLabels.length) {
