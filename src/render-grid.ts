@@ -45,6 +45,29 @@ export const GRID_SHEET: Omit<GridOptions, 'offset'> = {
 }
 
 /**
+ * 装配 Canvas：按逻辑尺寸（含 devicePixelRatio 缩放保证高分屏清晰）+ 底色填充。
+ * 返回已 scale 到逻辑坐标的 ctx。预览与导出共用，dpr/style 处理集中一处。
+ * 注意：调用方必须在 ctx 上完成全部绘制（drawGrid 等），不要再 setTransform。
+ */
+export function sizeCanvas(
+  canvas: HTMLCanvasElement,
+  width: number,
+  height: number,
+  background: string,
+): CanvasRenderingContext2D {
+  const dpr = window.devicePixelRatio || 1
+  canvas.width = width * dpr
+  canvas.height = height * dpr
+  canvas.style.width = `${width}px`
+  canvas.style.height = `${height}px`
+  const ctx = canvas.getContext('2d')!
+  ctx.scale(dpr, dpr)
+  ctx.fillStyle = background
+  ctx.fillRect(0, 0, width, height)
+  return ctx
+}
+
+/**
  * 在 ctx 上绘制网格：每格填色 + 细网格线 + 每 5 格一条粗辅助线。
  * offset 为网格区左上角偏移；canvas 尺寸由调用方负责。
  * 非高亮时每格标色号；highlightId 非空时标序号（行优先）。

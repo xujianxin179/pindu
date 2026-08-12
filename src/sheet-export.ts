@@ -3,7 +3,7 @@
 import { jsPDF } from 'jspdf'
 import { buildSheetLayout } from './domain/sheet'
 import { computeColorCounts } from './domain/convert'
-import { drawGrid, GRID_SHEET, SHEET_CELL_SIZE } from './render-grid'
+import { drawGrid, sizeCanvas, GRID_SHEET, SHEET_CELL_SIZE } from './render-grid'
 import type { ColorId, ColorPalette, ConvertResult } from './domain/types'
 
 const LIST_ROW_HEIGHT = 20
@@ -25,20 +25,17 @@ export function renderSheetToCanvas(
     showLabels: true,
     labelGutter: 20,
   })
-  const ctx = canvas.getContext('2d')!
   // 用色清单横向排列：按图纸宽度算每行列数，listHeight 按实际行数
   const listCols = Math.max(1, Math.floor((layout.sheetWidth - LIST_MARGIN - 10) / LIST_COL_WIDTH))
   const listRows = activePalette.length > 0 ? Math.ceil(activePalette.length / listCols) : 0
   const listHeight = listRows > 0 ? LIST_MARGIN + listRows * LIST_ROW_HEIGHT + LIST_MARGIN : 0
-  // 用 devicePixelRatio 缩放保证清晰
-  const dpr = window.devicePixelRatio || 1
-  canvas.width = layout.sheetWidth * dpr
-  canvas.height = (layout.sheetHeight + listHeight) * dpr
-  canvas.style.width = `${layout.sheetWidth}px`
-  canvas.style.height = `${layout.sheetHeight + listHeight}px`
-  ctx.scale(dpr, dpr)
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, layout.sheetWidth, layout.sheetHeight + listHeight)
+  // 装配（dpr 缩放 + style 尺寸 + 白底）走统一路径；随后绘制 drawGrid/标号/清单
+  const ctx = sizeCanvas(
+    canvas,
+    layout.sheetWidth,
+    layout.sheetHeight + listHeight,
+    GRID_SHEET.emptyColor!,
+  )
 
   drawGrid(ctx, pattern, palette, {
     offset: { x: layout.gridX, y: layout.gridY },
