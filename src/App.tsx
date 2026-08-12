@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, type ChangeEvent } from 'react'
 import { convertImageToPattern, computeColorCounts, cropImageToSourceImage } from './domain/convert'
+import { prepareConvert } from './domain/convert-orchestrate'
 import { generateBackgroundMask, getCachedMask } from './ai-mask'
 import { MARD_PALETTE } from './domain/palette'
 import type { ColorId, ColorPalette, ConvertResult, Pattern, RGB, SourceImage } from './domain/types'
@@ -401,30 +402,19 @@ function App() {
   }, [activeImage])
 
   useEffect(() => {
-    if (!activeImage || cropMode || gridWidth === '' || gridHeight === '' || maxColors === '') return
-    // 智能抠图：命中缓存立即转换；未命中（后台预计算中）先等待，完成后重跑本 effect
-    if (bgMode === 'ai' && bgMask === null) return
-    const removeBackground = bgMode !== 'off'
-    const r = convertImageToPattern(
-      activeImage,
-      {
-        width: gridWidth,
-        height: gridHeight,
-        maxColors,
-        removeBackground,
-        // AI 模式传外部 mask（失败 'failed' / 等待中 null / 与图不匹配时不传，回退内部 flood fill）；
-        // 不抠图时 removeBackground=false
-        backgroundMask:
-          bgMode === 'ai' &&
-          bgMask !== 'failed' &&
-          bgMask !== null &&
-          bgMask.length === activeImage.pixels.length
-            ? bgMask
-            : undefined,
-      },
-      MARD_PALETTE,
-    )
-    setResult(r)
+    // 薄壳：gate（无图/裁剪中/参数未填/AI 等待中）与抠图回退决策在 domain 纯函数 prepareConvert 内，
+    // 返回 null 表示本次不转换（AI 等待中由后台预计算完成后的重跑驱动）
+    const p = prepareConvert({
+      image: activeImage,
+      cropMode,
+      gridWidth,
+      gridHeight,
+      maxColors,
+      bgMode,
+      bgMask,
+    })
+    if (!p) return
+    setResult(convertImageToPattern(p.image, p.params, MARD_PALETTE))
   }, [activeImage, cropMode, gridWidth, gridHeight, maxColors, bgMode, bgMask])
 
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
