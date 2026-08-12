@@ -27,12 +27,16 @@ npx vitest run -t "detectBackgroundColor"          # 按名称过滤测试
 src/
 ├── domain/          # 领域层：纯函数，node 可测（所有测试 seam 都在这里）
 │   ├── types.ts     # 领域类型（ColorPalette/Pattern/ConvertResult 等）
-│   ├── convert.ts   # 核心转换管线 convertImageToPattern + computeColorCounts
-│   ├── sheet.ts     # 图纸布局 buildSheetLayout（辅助线/行列标号）
+│   ├── convert.ts   # 核心转换管线 convertImageToPattern + computeColorCounts + floodFillBackgroundMask
+│   ├── convert-orchestrate.ts # 转换编排 prepareConvert（gate + 抠图回退决策，App effect 薄壳）
+│   ├── mask.ts      # 抠图 mask 三态（MASK_FOREGROUND/BACKGROUND/DETAIL 常量 + BackgroundMask 类型）
+│   ├── mask-cache.ts# MaskResult 值对象 + MaskCache LRU 缓存 + imageKey 哈希
+│   ├── crop-geometry.ts # 裁剪几何纯函数（hitHandle/clampCrop/applyDrag）
+│   ├── sheet.ts     # 图纸布局 buildSheetLayout（纯几何，辅助线由 drawGrid 自算）
 │   ├── work.ts      # 作品库 WorkStore 契约 + MemoryWorkStore
 │   ├── palette.ts   # MARD 221 色（由脚本生成，勿手改）
 │   └── *.test.ts    # 全部测试（vitest）
-├── render-grid.ts   # drawGrid 共享渲染（预览与导出共用，防漂移）
+├── render-grid.ts   # drawGrid 共享渲染 + sizeCanvas 装配 + GRID_PREVIEW/GRID_SHEET preset
 ├── sheet-export.ts  # 图纸 Canvas 渲染 + PNG/PDF 导出 + Web Share（浏览器环境）
 ├── idb-work-store.ts# WorkStore 的 IndexedDB 适配层（薄壳，fake-indexeddb 测试）
 └── App.tsx          # UI（参数/预览/算色清单/导出/作品库）
@@ -42,12 +46,14 @@ src/
 
 - `convertImageToPattern(image, {width, height, maxColors, removeBackground}, palette) → {pattern, activePalette}`：重采样（box filter）→ 去背景（边缘主色 `dominantEdgeColor`，容差 30）→ maxColors 选子集（覆盖最多，平局按色板顺序）→ 子集内最近邻量化。**`colorCounts` 不随结果存储**，由 `computeColorCounts(pattern, activePalette)` 派生。
 - `Pattern.cells` 是 `(ColorId | null)[]`：null = 去背景留下的空格（不参与算色）。
-- 图纸渲染：`drawGrid` 是唯一格子绘制逻辑（预览 12px 格 + 浅灰空格，导出 16px 格 + 白纸，导出每格标色号）；导出加行列数字标号与用色清单。高亮色号时其余格变暗 55%、目标格标序号 1..N（行优先）。
+- 图纸渲染：`drawGrid` 是唯一格子绘制逻辑（预览 12px 格 + 浅灰空格，导出 16px 格 + 白纸，导出每格标色号）；辅助线（每 5 格、实虚交替）由 drawGrid 自算，layout 不管。导出加行列数字标号与用色清单。高亮色号时其余格变暗 55%、目标格标序号 1..N（行优先）。
+- canvas 装配统一走 `sizeCanvas`（dpr 缩放 + style 尺寸 + 底色），预览/导出差异在 `GRID_PREVIEW`/`GRID_SHEET` preset。
 
 ### 领域约定
 
 - 术语定义见 `CONTEXT.md`（色板/用色集/图案/作品/算色/图纸），代码与文档用词一致。
 - 技术栈决策见 `docs/adr/0001-pwa-over-native.md`（PWA 而非原生，Windows 环境无 Mac）。
+- 架构决策见 `docs/adr/0002-deep-module-refactors.md`（深模块重构，含"未来不重提"理由）。
 - 需求来源见 `docs/spec/0001-image-to-pattern-pipeline.md` 与 `.scratch/pindu-mvp/issues/`（tracer-bullet tickets）。
 
 ## 工作约定
