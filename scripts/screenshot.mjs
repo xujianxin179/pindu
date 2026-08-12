@@ -53,6 +53,22 @@ try {
     await page.waitForTimeout(400)
     await page.screenshot({ path: 'scripts/shot-highlight.png' })
   }
+
+  // 导出图纸截图：直接调 renderSheetToCanvas，验证清单横向排列 + 色号反色字 + 辅助线实虚交替
+  const sheetDataUrl = await page.evaluate(async () => {
+    const { renderSheetToCanvas } = await import('/src/sheet-export.ts')
+    const { MARD_PALETTE } = await import('/src/domain/palette.ts')
+    const ids = MARD_PALETTE.slice(0, 10).map((e) => e.id)
+    const width = 24
+    const height = 10
+    const cells = Array.from({ length: width * height }, (_, i) => ids[i % ids.length])
+    const result = { pattern: { width, height, cells }, activePalette: ids }
+    const cv = document.createElement('canvas')
+    renderSheetToCanvas(cv, result, MARD_PALETTE, null)
+    return cv.toDataURL('image/png')
+  })
+  const { writeFileSync } = await import('node:fs')
+  writeFileSync('scripts/shot-sheet.png', Buffer.from(sheetDataUrl.split(',')[1], 'base64'))
 } finally {
   await browser.close()
   server.kill()

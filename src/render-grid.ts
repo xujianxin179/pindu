@@ -1,11 +1,18 @@
 // 网格渲染的共享逻辑：预览（PatternCanvas）与图纸导出（renderSheetToCanvas）共用，
 // 保证两处格子渲染不漂移。
 
-import type { ColorId, ColorPalette, Pattern } from './domain/types'
+import type { ColorId, ColorPalette, Pattern, RGB } from './domain/types'
 
 export const CELL_SIZE = 12
 /** 粗辅助线颜色：MARD F4 珠红（深色钉板与白纸图纸上都醒目）。 */
 const GUIDE_LINE_COLOR = '#fb2a40'
+
+/** 按格子底色亮度取对比文字色（亮底黑字、暗底白字），替代白字黑描边，任意底色上都清晰。 */
+function contrastTextColor(rgb: RGB): string {
+  // Rec.601 亮度，阈值 150：珠黄等亮色用黑字，深色钉板色用白字
+  const lum = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b
+  return lum > 150 ? '#000000' : '#ffffff'
+}
 
 /**
  * 在 ctx 上绘制网格：每格填色 + 细网格线 + 每 5 格一条粗辅助线。
@@ -28,7 +35,7 @@ export function drawGrid(
   showColorLabels = true,
 ) {
   const colorMap = new Map(palette.map((e) => [e.id, e.rgb]))
-  // 色号/序号标注：字号随格子缩放，白字黑描边
+  // 色号/序号标注：字号随格子缩放，字色按格子底色取反色（亮底黑字/暗底白字）
   const labelFont = `bold ${Math.round(cellSize * 0.45)}px ui-monospace, "SF Mono", Consolas, monospace`
   ctx.font = labelFont
   ctx.textAlign = 'center'
@@ -55,33 +62,43 @@ export function drawGrid(
       } else if (id !== null) {
         highlightSeq++
         const label = String(highlightSeq)
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'
-        ctx.lineWidth = 3
-        ctx.strokeText(label, x + cellSize / 2, y + cellSize / 2)
-        ctx.fillStyle = '#ffffff'
+        // 目标格保持全亮原色，序号用底色反色字（不描边）
+        ctx.fillStyle = rgb ? contrastTextColor(rgb) : '#ffffff'
         ctx.fillText(label, x + cellSize / 2, y + cellSize / 2)
       }
-    } else if (id !== null && showColorLabels) {
-      // 普通模式：每格标色号（可开关）
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'
-      ctx.lineWidth = 3
-      ctx.strokeText(id, x + cellSize / 2, y + cellSize / 2)
-      ctx.fillStyle = '#ffffff'
+    } else if (id !== null && showColorLabels && rgb) {
+      // 普通模式：每格标色号，字色取底色反色（亮底黑字/暗底白字，不描边）
+      ctx.fillStyle = contrastTextColor(rgb)
       ctx.fillText(id, x + cellSize / 2, y + cellSize / 2)
     }
   }
 
-  // 粗辅助线（每 5 格一条 + 边框，红色）
+  // 粗辅助线（每 5 格一条，红色）：边框实线，中间辅助线实线/虚线交替
+  // （第 5 格实线、第 10 格虚线、第 15 格实线…），便于区分 5 与 10 的区块
+  const gridW = pattern.width * cellSize
+  const gridH = pattern.height * cellSize
   ctx.strokeStyle = GUIDE_LINE_COLOR
   ctx.lineWidth = 1
+  // 边框始终实线
+  ctx.setLineDash([])
   ctx.beginPath()
-  for (let gx = 0; gx <= pattern.width * cellSize; gx += cellSize * 5) {
-    ctx.moveTo(gridX + gx, gridY)
-    ctx.lineTo(gridX + gx, gridY + pattern.height * cellSize)
-  }
-  for (let gy = 0; gy <= pattern.height * cellSize; gy += cellSize * 5) {
-    ctx.moveTo(gridX, gridY + gy)
-    ctx.lineTo(gridX + pattern.width * cellSize, gridY + gy)
-  }
+  ctx.rect(gridX, gridY, gridW, gridH)
   ctx.stroke()
+  // 中间竖直辅助线：奇数条（5,15,25…）实线，偶数条（10,20…）虚线
+  for (let n = 1; n * cellSize * 5 < gridW; n++) {
+    ctx.setLineDash(n % 2 === 0 ? [4, 4] : [])
+    ctx.beginPath()
+    ctx.moveTo(gridX + n * cellSize * 5, gridY)
+    ctx.lineTo(gridX + n * cellSize * 5, gridY + gridH)
+    ctx.stroke()
+  }
+  // 中间水平辅助线：同上交替
+  for (let n = 1; n * cellSize * 5 < gridH; n++) {
+    ctx.setLineDash(n % 2 === 0 ? [4, 4] : [])
+    ctx.beginPath()
+    ctx.moveTo(gridX, gridY + n * cellSize * 5)
+    ctx.lineTo(gridX + gridW, gridY + n * cellSize * 5)
+    ctx.stroke()
+  }
+  ctx.setLineDash([])
 }

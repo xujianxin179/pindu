@@ -12,6 +12,8 @@ const SHEET_CELL_SIZE = 16
 /** 图纸下方用色清单的行高。 */
 const LIST_ROW_HEIGHT = 20
 const LIST_MARGIN = 10
+/** 用色清单横向排列的列宽：色块 14 + 间距 + "色号 × 数量" 文本。 */
+const LIST_COL_WIDTH = 90
 
 /** 把图纸渲染到指定 Canvas（含辅助线、行列标号、每格色号标注与用色清单）。返回该 canvas。 */
 export function renderSheetToCanvas(
@@ -29,7 +31,10 @@ export function renderSheetToCanvas(
     labelGutter: 20,
   })
   const ctx = canvas.getContext('2d')!
-  const listHeight = activePalette.length > 0 ? LIST_MARGIN + activePalette.length * LIST_ROW_HEIGHT + LIST_MARGIN : 0
+  // 用色清单横向排列：按图纸宽度算每行列数，listHeight 按实际行数
+  const listCols = Math.max(1, Math.floor((layout.sheetWidth - LIST_MARGIN - 10) / LIST_COL_WIDTH))
+  const listRows = activePalette.length > 0 ? Math.ceil(activePalette.length / listCols) : 0
+  const listHeight = listRows > 0 ? LIST_MARGIN + listRows * LIST_ROW_HEIGHT + LIST_MARGIN : 0
   // 用 devicePixelRatio 缩放保证清晰
   const dpr = window.devicePixelRatio || 1
   canvas.width = layout.sheetWidth * dpr
@@ -57,20 +62,25 @@ export function renderSheetToCanvas(
     }
   }
 
-  // 用色清单（色号 + 样块 + 数量）
+  // 用色清单（色号 + 样块 + 数量）：横向排列，排满换行
   ctx.textAlign = 'left'
   ctx.font = '11px sans-serif'
+  let listX = 10
   let listY = layout.sheetHeight + LIST_MARGIN
   for (const id of activePalette) {
     const entry = palette.find((e) => e.id === id)!
     ctx.fillStyle = `rgb(${entry.rgb.r},${entry.rgb.g},${entry.rgb.b})`
-    ctx.fillRect(10, listY, 14, 14)
+    ctx.fillRect(listX, listY, 14, 14)
     ctx.strokeStyle = '#cccccc'
     ctx.lineWidth = 0.5
-    ctx.strokeRect(10, listY, 14, 14)
+    ctx.strokeRect(listX, listY, 14, 14)
     ctx.fillStyle = '#333333'
-    ctx.fillText(`${id} × ${counts.get(id) ?? 0}`, 30, listY + 8)
-    listY += LIST_ROW_HEIGHT
+    ctx.fillText(`${id} × ${counts.get(id) ?? 0}`, listX + 20, listY + 8)
+    listX += LIST_COL_WIDTH
+    if (listX + LIST_COL_WIDTH > layout.sheetWidth - 10) {
+      listX = 10
+      listY += LIST_ROW_HEIGHT
+    }
   }
 
   return canvas
