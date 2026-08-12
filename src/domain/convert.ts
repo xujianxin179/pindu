@@ -7,6 +7,7 @@ import type {
   RGB,
   SourceImage,
 } from './types'
+import { MASK_BACKGROUND, type BackgroundMask } from './mask'
 
 /**
  * 算色 (Color Counting)：统计图案里每种色号各需要多少颗珠子。
@@ -45,8 +46,8 @@ function nearestColorId(target: RGB, palette: ColorPalette): ColorId {
 
 /**
  * 重采样到 width×height 网格，同时按源图像素级背景 mask 判定背景，输出每格平均色与背景 mask。
- * bgMask 非空时（1=外部背景，2=内部细节洞）：一格内背景像素（值 1）数 >=
- * 非背景像素（0 前景 + 2 细节）数则该格判为背景（mask=true）；否则该格 RGB
+ * bgMask 非空时（MASK_BACKGROUND=外部背景，MASK_DETAIL=内部细节洞）：一格内背景像素（MASK_BACKGROUND）数 >=
+ * 非背景像素（MASK_FOREGROUND 前景 + MASK_DETAIL 细节）数则该格判为背景（mask=true）；否则该格 RGB
  * 只取非背景像素的颜色（见下），避免背景稀释交界格颜色。
  * 颜色合成：多数派投票——统计格内非背景像素中覆盖最多的颜色（精确匹配 RGB），
  * 若多数派严格过半取该色（小特征不被平均稀释，保留细节），否则取非背景像素平均
@@ -57,7 +58,7 @@ function resampleWithMask(
   image: SourceImage,
   width: number,
   height: number,
-  bgMask: Uint8Array | null,
+  bgMask: BackgroundMask | null,
 ): { sampled: RGB[]; mask: boolean[] } {
   const { width: sw, height: sh, pixels } = image
   const sampled: RGB[] = []
@@ -79,7 +80,7 @@ function resampleWithMask(
       for (let y = yStart; y < yEnd; y++) {
         for (let x = xStart; x < xEnd; x++) {
           const p = pixels[y * sw + x]
-          if (bgMask && bgMask[y * sw + x] === 1) {
+          if (bgMask && bgMask[y * sw + x] === MASK_BACKGROUND) {
             bgCount++
           } else {
             r += p.r
@@ -176,7 +177,7 @@ function dominantEdgeColor(image: SourceImage): RGB {
  * 背景区域为 1。与纯颜色判定相比：主体内部被包围的同色区域不连通到边缘，不会被误抠；
  * 渐变背景可沿相邻色差逐级生长。返回源图像素级 mask，与 image.pixels 行优先一一对应。
  */
-export function floodFillBackgroundMask(image: SourceImage, toleranceSq: number): Uint8Array {
+export function floodFillBackgroundMask(image: SourceImage, toleranceSq: number): BackgroundMask {
   const { width: w, height: h, pixels } = image
   const base = dominantEdgeColor(image)
   const mask = new Uint8Array(pixels.length)
