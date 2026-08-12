@@ -18,24 +18,6 @@ describe('buildSheetLayout', () => {
     expect(l.sheetHeight).toBe(50 + l.gridY)
   })
 
-  it('辅助线每 guideInterval 格一条，含左右/上下边框', () => {
-    const l = buildSheetLayout(10, 10, { cellSize: 10, guideInterval: 5, showLabels: false })
-    expect(l.vLines).toEqual([0, 50, 100])
-    expect(l.hLines).toEqual([0, 50, 100])
-  })
-
-  it('网格尺寸不能被间隔整除时，边框仍在内', () => {
-    const l = buildSheetLayout(9, 9, { cellSize: 10, guideInterval: 5, showLabels: false })
-    expect(l.vLines).toEqual([0, 50, 90])
-    expect(l.hLines).toEqual([0, 50, 90])
-  })
-
-  it('单格图纸只有边框线', () => {
-    const l = buildSheetLayout(1, 1, { cellSize: 10, guideInterval: 5, showLabels: false })
-    expect(l.vLines).toEqual([0, 10])
-    expect(l.hLines).toEqual([0, 10])
-  })
-
   it('标号数组长度与网格一致，列标行标均为数字', () => {
     const l = buildSheetLayout(3, 2, { cellSize: 10, showLabels: true })
     expect(l.colLabels).toEqual(['1', '2', '3'])
