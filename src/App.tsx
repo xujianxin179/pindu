@@ -57,7 +57,7 @@ function computeGridSize(image: SourceImage, longSide: number) {
 function beadStyle(id: ColorId, palette: ColorPalette): React.CSSProperties {
   const entry = palette.find((e) => e.id === id)
   return {
-    background: entry ? `rgb(${entry.rgb.r},${entry.rgb.g},${entry.rgb.b})` : 'var(--panel)',
+    background: entry ? `rgb(${entry.rgb.r},${entry.rgb.g},${entry.rgb.b})` : 'var(--surface)',
   }
 }
 
@@ -188,7 +188,7 @@ function CropView({
   }
 
   return (
-    <div className="crop-wrap">
+    <div className="card crop-wrap">
       <div
         className="crop-stage"
         style={{ width: displayW, height: displayH }}
@@ -296,7 +296,7 @@ function WorkspacePanel({
             <button className="btn" onClick={() => onRename(w.id)}>
               重命名
             </button>
-            <button className="btn" onClick={() => onDelete(w.id)}>
+            <button className="btn btn-danger" onClick={() => onDelete(w.id)}>
               删除
             </button>
           </div>
@@ -342,7 +342,7 @@ function App() {
 
   /**
    * AI 智能抠图：图变化（导入/裁剪确认）后无条件在后台预计算并缓存 mask，
-   * 与当前抠图模式解耦——切到智能抠图时直接命中缓存，不再重新推理等待。
+   * 与当前抠图模式解耦--切到智能抠图时直接命中缓存，不再重新推理等待。
    * 仅 activeImage 变化触发（cropMode 变化仅清缓存态，不重算）。
    */
   useEffect(() => {
@@ -463,7 +463,7 @@ function App() {
   }
 
   return (
-    <div>
+    <div className="app">
       <header className="app-header">
         <span className="logo">
           <span className="bead" style={beadStyle('F5', MARD_PALETTE)} />
@@ -488,188 +488,193 @@ function App() {
         </label>
       </header>
 
-      <div className="params">
-        <label className="param-field">
-          宽
-          <input
-            type="number"
-            min={1}
-            max={200}
-            value={gridWidth}
-            placeholder="40"
-            onChange={(e) => setGridWidth(e.target.value === '' ? '' : Number(e.target.value))}
-          />
-        </label>
-        <label className="param-field">
-          高
-          <input
-            type="number"
-            min={1}
-            max={200}
-            value={gridHeight}
-            placeholder="40"
-            onChange={(e) => setGridHeight(e.target.value === '' ? '' : Number(e.target.value))}
-          />
-        </label>
-        <label className="param-field">
-          用色数
-          <input
-            type="number"
-            min={1}
-            max={MAX_PALETTE_SIZE}
-            value={maxColors}
-            placeholder="30"
-            onChange={(e) => setMaxColors(e.target.value === '' ? '' : Number(e.target.value))}
-          />
-        </label>
-        <span className="param-field">
-          抠图
-          {(
-            [
-              ['ai', '智能抠图'],
-              ['off', '不抠图'],
-            ] as const
-          ).map(([value, label]) => (
-            <label key={value}>
+      <main className="main">
+        <section className="card">
+          <div className="params">
+            <label className="param-field">
+              宽
               <input
-                type="radio"
-                name="bg-mode"
-                value={value}
-                checked={bgMode === value}
-                onChange={() => setBgMode(value)}
+                type="number"
+                min={1}
+                max={200}
+                value={gridWidth}
+                placeholder="40"
+                onChange={(e) => setGridWidth(e.target.value === '' ? '' : Number(e.target.value))}
               />
-              {label}
             </label>
-          ))}
-        </span>
-        <label className="param-field">
-          <input
-            type="checkbox"
-            checked={showColorLabels}
-            onChange={(e) => setShowColorLabels(e.target.checked)}
-          />
-          预览标色号
-        </label>
-      </div>
+            <label className="param-field">
+              高
+              <input
+                type="number"
+                min={1}
+                max={200}
+                value={gridHeight}
+                placeholder="40"
+                onChange={(e) => setGridHeight(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            </label>
+            <label className="param-field">
+              用色数
+              <input
+                type="number"
+                min={1}
+                max={MAX_PALETTE_SIZE}
+                value={maxColors}
+                placeholder="30"
+                onChange={(e) => setMaxColors(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            </label>
+            <span className="param-field">
+              抠图
+              {(
+                [
+                  ['ai', '智能抠图'],
+                  ['off', '不抠图'],
+                ] as const
+              ).map(([value, label]) => (
+                <label key={value}>
+                  <input
+                    type="radio"
+                    name="bg-mode"
+                    value={value}
+                    checked={bgMode === value}
+                    onChange={() => setBgMode(value)}
+                  />
+                  {label}
+                </label>
+              ))}
+            </span>
+            <label className="param-field">
+              <input
+                type="checkbox"
+                checked={showColorLabels}
+                onChange={(e) => setShowColorLabels(e.target.checked)}
+              />
+              预览标色号
+            </label>
+          </div>
+        </section>
 
-      {cropMode && image ? (
-        <CropView image={image} initialRect={lastCropRect} onDone={onCropDone} />
-      ) : (
-        <>
-          {result && (
-            <>
-              <div className="canvas-wrap">
-                <PatternCanvas
-                  pattern={result.pattern}
+        {cropMode && image ? (
+          <CropView image={image} initialRect={lastCropRect} onDone={onCropDone} />
+        ) : (
+          <>
+            {result && (
+              <section className="card">
+                <div className="canvas-wrap">
+                  <PatternCanvas
+                    pattern={result.pattern}
+                    palette={MARD_PALETTE}
+                    highlightId={highlightId}
+                    showColorLabels={showColorLabels}
+                  />
+                  <p className="grid-meta">
+                    {result.pattern.width} × {result.pattern.height} 格
+                    {image && (
+                      <button
+                        className="btn-pill"
+                        style={{ marginLeft: 12, verticalAlign: 'middle' }}
+                        onClick={() => setCropMode(true)}
+                      >
+                        重新裁剪
+                      </button>
+                    )}
+                  </p>
+                  {bgMask?.status === 'failed' && (
+                    <p className="grid-meta">AI 抠图失败，已用颜色检测替代{aiError ? `（${aiError.slice(0, 200)}）` : ''}</p>
+                  )}
+                </div>
+
+                <ColorCountsList
+                  result={result}
                   palette={MARD_PALETTE}
                   highlightId={highlightId}
-                  showColorLabels={showColorLabels}
+                  onHighlight={setHighlightId}
                 />
-                <p className="grid-meta">
-                  {result.pattern.width} × {result.pattern.height} 格
-                  {image && (
-                    <button
-                      className="btn"
-                      style={{ marginLeft: 12, verticalAlign: 'middle' }}
-                      onClick={() => setCropMode(true)}
-                    >
-                      重新裁剪
-                    </button>
-                  )}
-                </p>
-                {bgMask?.status === 'failed' && (
-                  <p className="grid-meta">AI 抠图失败，已用颜色检测替代{aiError ? `（${aiError.slice(0, 200)}）` : ''}</p>
+
+                <div className="sheet-actions">
+                  <button
+                    className="btn"
+                    onClick={() => exportSheetPng(result, MARD_PALETTE, 'pindu-sheet.png', highlightId)}
+                  >
+                    导出图纸 PNG
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={() => exportSheetPdf(result, MARD_PALETTE, 'pindu-sheet.pdf', highlightId)}
+                  >
+                    导出图纸 PDF
+                  </button>
+                  <select
+                    className="btn"
+                    defaultValue="png"
+                    onChange={(e) =>
+                      shareSheet(
+                        result,
+                        MARD_PALETTE,
+                        `pindu-sheet.${e.target.value}`,
+                        e.target.value as 'png' | 'pdf',
+                        highlightId,
+                      )
+                    }
+                  >
+                    <option value="png">分享图纸 PNG</option>
+                    <option value="pdf">分享图纸 PDF</option>
+                  </select>
+                </div>
+
+                <div className="save-row">
+                  <input
+                    placeholder="作品名称，例如：星空小猫"
+                    value={saveName}
+                    onChange={(e) => setSaveName(e.target.value)}
+                  />
+                  <button className="btn btn-primary" onClick={onSaveWork}>
+                    保存作品
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {!result && (
+              <section className="card">
+                {bgMode === 'ai' && activeImage && bgMask === null ? (
+                  <p className="empty">正在智能抠图中…</p>
+                ) : (
+                  <p className="empty">从右上角导入一张图片，开始拼豆。</p>
                 )}
-              </div>
+              </section>
+            )}
+          </>
+        )}
 
-              <ColorCountsList
-                result={result}
-                palette={MARD_PALETTE}
-                highlightId={highlightId}
-                onHighlight={setHighlightId}
-              />
-
-              <div className="sheet-actions">
-                <button
-                  className="btn"
-                  onClick={() => exportSheetPng(result, MARD_PALETTE, 'pindu-sheet.png', highlightId)}
-                >
-                  导出图纸 PNG
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => exportSheetPdf(result, MARD_PALETTE, 'pindu-sheet.pdf', highlightId)}
-                >
-                  导出图纸 PDF
-                </button>
-                <select
-                  className="btn"
-                  defaultValue="png"
-                  style={{ background: 'var(--panel)', color: 'var(--ink)' }}
-                  onChange={(e) =>
-                    shareSheet(
-                      result,
-                      MARD_PALETTE,
-                      `pindu-sheet.${e.target.value}`,
-                      e.target.value as 'png' | 'pdf',
-                      highlightId,
-                    )
-                  }
-                >
-                  <option value="png">分享图纸 PNG</option>
-                  <option value="pdf">分享图纸 PDF</option>
-                </select>
-              </div>
-
-              <div className="save-row">
-                <input
-                  placeholder="作品名称，例如：星空小猫"
-                  value={saveName}
-                  onChange={(e) => setSaveName(e.target.value)}
-                />
-                <button className="btn btn-primary" onClick={onSaveWork}>
-                  保存作品
-                </button>
-              </div>
-            </>
-          )}
-
-          {!result && (
-            <div className="canvas-wrap">
-              {bgMode === 'ai' && activeImage && bgMask === null ? (
-                <p className="empty">正在智能抠图中…</p>
-              ) : (
-                <p className="empty">从右上角导入一张图片，开始拼豆。</p>
-              )}
-            </div>
-          )}
-        </>
-      )}
-
-      <WorkspacePanel
-        works={works}
-        onOpen={onOpenWork}
-        onRename={(id) => {
-          const w = works.find((x) => x.id === id)
-          setRename({ id, name: w?.name ?? '' })
-        }}
-        onDelete={onDeleteWork}
-      />
-
-      {rename && (
-        <div className="rename-row">
-          <input
-            value={rename.name}
-            onChange={(e) => setRename({ ...rename, name: e.target.value })}
+        <section className="card">
+          <WorkspacePanel
+            works={works}
+            onOpen={onOpenWork}
+            onRename={(id) => {
+              const w = works.find((x) => x.id === id)
+              setRename({ id, name: w?.name ?? '' })
+            }}
+            onDelete={onDeleteWork}
           />
-          <button className="btn btn-primary" onClick={onRenameWork}>
-            确认
-          </button>
-          <button className="btn" onClick={() => setRename(null)}>
-            取消
-          </button>
-        </div>
-      )}
+        </section>
+
+        {rename && (
+          <section className="card rename-row">
+            <input
+              value={rename.name}
+              onChange={(e) => setRename({ ...rename, name: e.target.value })}
+            />
+            <button className="btn btn-primary" onClick={onRenameWork}>
+              确认
+            </button>
+            <button className="btn" onClick={() => setRename(null)}>
+              取消
+            </button>
+          </section>
+        )}
+      </main>
     </div>
   )
 }

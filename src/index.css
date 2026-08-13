@@ -1,21 +1,40 @@
-/* pinDu 拼豆 — 钉板工作台
- * UI 色板全部取自 MARD 221 色号体系（色号即珠色）。
+/* pinDu 拼豆 - Apple 设计骨架 + MARD 灵魂
+ * 浅色二色 rhythm（#f5f5f7 底 + #ffffff 卡片）+ MARD 色号锚定强调色。
  */
 
 :root {
-  /* MARD 色号驱动的 UI 色板 */
-  --board: #2c2c2c; /* H6 钉板底 */
-  --panel: #3a3a3c; /* 界面中性色（非 MARD 色号）：面板，略亮于板 */
-  --ink: #fbfbfb; /* H2 主文字 */
-  --ink-dim: #b4b4b4; /* H3 次文字 */
-  --line: #55565a; /* 界面中性色（非 MARD 色号）：分隔线 */
-  --accent: #f0d83a; /* A5 珠黄：主动作 */
-  --accent-ink: #2c2c2c; /* 黄底上的深字 */
-  --blue: #3554af; /* D3 珠蓝：信息/选中 */
+  /* MARD 色号驱动的强调色（保留产品身份：色号即珠色） */
+  --accent: #f0d83a; /* A5 珠黄：主动作填充 */
+  --accent-ink: #1d1d1f; /* 黄底上的近黑字（Apple 近黑） */
+  --accent-hover: #f5e45c; /* 珠黄 hover */
+  --blue: #3554af; /* D3 珠蓝：链接/pill/focus ring */
   --green: #1d9b54; /* B8 珠绿：成功 */
-  --red: #e10328; /* F5 珠红：危险 */
+  --red: #e10328; /* F5 珠红：危险/删除 */
   --paper: #ffffff; /* H1 图纸白 */
 
+  /* Apple 浅色二色 rhythm */
+  --bg: #f5f5f7; /* 页面底（Apple 浅灰） */
+  --surface: #ffffff; /* 卡片白底 */
+  --surface-hover: #f5f5f7; /* 卡片内 hover */
+
+  /* Apple 文字色阶（浅底） */
+  --ink: #1d1d1f; /* 主文字（Apple 近黑） */
+  --ink-secondary: rgba(0, 0, 0, 0.8); /* 二级文字 */
+  --ink-dim: rgba(0, 0, 0, 0.48); /* 三级/标签 */
+
+  /* 界面中性色（非 MARD 色号） */
+  --line: rgba(0, 0, 0, 0.08); /* 卡片内分隔/浅边 */
+  --line-strong: #d2d2d7; /* 输入框/按钮描边 */
+
+  /* 阴影：Apple 软阴影在浅灰底+白卡上调淡（原 0.22 偏重） */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 3px 12px rgba(0, 0, 0, 0.06);
+
+  /* 圆角（Apple scale） */
+  --radius-sm: 8px; /* 按钮/输入 */
+  --radius-md: 12px; /* 卡片 */
+  --radius-pill: 980px; /* pill CTA */
+
+  /* 字体：系统链（iPad 即 SF Pro，自动 optical sizing；Windows 回退雅黑） */
   --font-body: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', sans-serif;
   /* 色号/数量一律等宽，让编号像标签 */
@@ -33,8 +52,9 @@ body {
 
 body {
   font-family: var(--font-body);
-  background: var(--board);
+  background: var(--bg);
   color: var(--ink);
+  letter-spacing: -0.022em; /* Apple 负字距 */
   -webkit-font-smoothing: antialiased;
 }
 
@@ -46,14 +66,27 @@ button {
 input,
 select {
   font-family: inherit;
+  font-size: 14px;
   color: var(--ink);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 4px 8px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(53, 84, 175, 0.2); /* D3 珠蓝 ring */
+}
+
+input[type='radio'],
+input[type='checkbox'] {
+  accent-color: var(--blue);
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--blue);
   outline-offset: 2px;
 }

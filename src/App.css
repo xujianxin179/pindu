@@ -1,16 +1,18 @@
-/* pinDu 拼豆 — 组件样式（钉板工作台） */
+/* pinDu 拼豆 - 组件样式（Apple 骨架 + MARD 灵魂） */
 
-/* ── 顶栏 ─────────────────────────────── */
+/* ── 顶栏（浅色玻璃态） ───────────────── */
 
 .app-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 12px 24px;
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  background: var(--board);
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
   z-index: 10;
 }
 
@@ -26,13 +28,16 @@
 }
 
 .brand {
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  color: var(--ink);
 }
 
 .brand-sub {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--ink-dim);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -42,20 +47,41 @@
   flex: 1;
 }
 
+/* ── 主容器 ───────────────────────────── */
+
+.main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── 卡片 ─────────────────────────────── */
+
+.card {
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 20px 24px;
+}
+
 /* ── 按钮 ─────────────────────────────── */
 
 .btn {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: 8px;
-  padding: 6px 14px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
   font-size: 14px;
+  color: var(--ink);
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
 }
 
 .btn:hover {
-  border-color: var(--ink-dim);
+  background: var(--surface-hover);
 }
 
 .btn:active {
@@ -70,8 +96,35 @@
 }
 
 .btn-primary:hover {
-  background: #f5e45c;
+  background: var(--accent-hover);
   border-color: transparent;
+}
+
+/* pill 链接式 CTA（重新裁剪等次要动作） */
+.btn-pill {
+  background: transparent;
+  color: var(--blue);
+  border: 1px solid var(--blue);
+  border-radius: var(--radius-pill);
+  padding: 6px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-pill:hover {
+  background: rgba(53, 84, 175, 0.06);
+}
+
+/* 危险/删除按钮（珠红文字） */
+.btn-danger {
+  color: var(--red);
+  border-color: var(--line-strong);
+  background: var(--surface);
+}
+
+.btn-danger:hover {
+  background: rgba(225, 3, 40, 0.06);
 }
 
 /* ── 参数行 ───────────────────────────── */
@@ -81,9 +134,8 @@
   gap: 16px;
   flex-wrap: wrap;
   align-items: center;
-  padding: 8px 16px;
-  font-size: 13px;
-  color: var(--ink-dim);
+  font-size: 14px;
+  color: var(--ink-secondary);
 }
 
 .param-field {
@@ -97,30 +149,44 @@
   font-family: var(--font-mono);
 }
 
-/* ── 珠子（logo / 算色样块共用） ──────── */
+/* ── 珠子（logo / 算色样块共用，保留立体感） ── */
 
 .bead {
+  position: relative;
   width: 20px;
   height: 20px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(0, 0, 0, 0.12);
   box-shadow:
-    inset 0 2px 2px rgba(255, 255, 255, 0.35),
-    inset 0 -2px 3px rgba(0, 0, 0, 0.3);
+    inset 0 2px 2px rgba(255, 255, 255, 0.75),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.28),
+    0 1px 2px rgba(0, 0, 0, 0.12);
   padding: 0;
 }
 
-/* ── 画布（钉板工作台） ───────────────── */
+/* 拼豆中心孔：logo 珠子一眼识别为拼豆（而非圆点/窗口按钮） */
+.logo .bead::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* ── 画布预览 ─────────────────────────── */
 
 .canvas-wrap {
-  padding: 16px;
   overflow-x: auto;
   text-align: center;
 }
 
 .canvas-wrap canvas {
-  border-radius: 4px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   max-width: 100%;
 }
 
@@ -128,22 +194,24 @@
   color: var(--ink-dim);
   font-size: 12px;
   font-family: var(--font-mono);
-  margin: 8px 0 0;
+  margin: 12px 0 0;
 }
 
-/* ── 算色清单（色号徽章行） ───────────── */
+/* ── 算色清单（卡片内分区） ───────────── */
 
 .counts {
-  padding: 10px 16px;
-  border-top: 1px solid var(--line);
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 16px;
 }
 
 .counts-label {
   font-size: 12px;
+  font-weight: 600;
   color: var(--ink-dim);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -153,17 +221,18 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 2px 10px 2px 4px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  padding: 3px 12px 3px 5px;
   font-size: 13px;
+  color: var(--ink);
   cursor: pointer;
   transition: border-color 0.15s ease;
 }
 
 .count-chip:hover {
-  border-color: var(--ink-dim);
+  border-color: var(--blue);
 }
 
 /* 高亮中的色号 chip：珠黄描边 */
@@ -179,30 +248,36 @@
   cursor: default;
 }
 
+.count-id {
+  font-family: var(--font-mono);
+}
+
 .count-num {
   font-family: var(--font-mono);
   color: var(--ink-dim);
 }
 
-/* ── 图纸操作 ─────────────────────────── */
+/* ── 图纸操作（卡片内分区） ───────────── */
 
 .sheet-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   align-items: center;
-  padding: 10px 16px;
   border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 16px;
 }
 
-/* ── 保存/作品库 ──────────────────────── */
+/* ── 保存作品（卡片内分区） ───────────── */
 
 .save-row {
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 10px 16px;
   border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 16px;
 }
 
 .save-row input {
@@ -210,32 +285,34 @@
   max-width: 240px;
 }
 
-.workspace {
-  padding: 6px 16px 24px;
-}
+/* ── 作品库 ───────────────────────────── */
 
 .workspace h3 {
-  margin: 10px 0 6px;
-  font-size: 14px;
-  color: var(--ink-dim);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  margin: 0 0 12px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.022em;
 }
 
 .work-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  padding: 8px 0;
   border-bottom: 1px solid var(--line);
 }
 
+.work-row:last-child {
+  border-bottom: none;
+}
+
 .work-thumb {
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
   object-fit: cover;
-  background: var(--panel);
+  background: var(--surface-hover);
   border: 1px solid var(--line);
 }
 
@@ -245,18 +322,21 @@
   background: none;
   border: none;
   font-size: 14px;
+  color: var(--ink);
   cursor: pointer;
   padding: 4px 0;
 }
 
 .work-open:hover {
-  color: var(--accent);
+  color: var(--blue);
 }
 
 .empty {
   color: var(--ink-dim);
-  font-size: 14px;
-  padding: 12px 0;
+  font-size: 15px;
+  text-align: center;
+  padding: 16px 0;
+  margin: 0;
 }
 
 /* ── 重命名行 ─────────────────────────── */
@@ -265,7 +345,11 @@
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 8px 16px;
+}
+
+.rename-row input {
+  flex: 1;
+  max-width: 240px;
 }
 
 /* ── 动效（克制，尊重 reduced motion） ── */
@@ -289,7 +373,9 @@
   .canvas-wrap canvas {
     animation: none;
   }
-  .btn {
+  .btn,
+  .btn-pill,
+  .btn-danger {
     transition: none;
   }
 }
@@ -300,15 +386,15 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 16px;
+  gap: 16px;
 }
 
 .crop-stage {
   position: relative;
   overflow: hidden;
-  border: 1px solid var(--line);
-  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
   touch-action: none;
 }
 
@@ -319,7 +405,7 @@
 .crop-box {
   position: absolute;
   border: 2px solid var(--accent); /* A5 珠黄 */
-  box-shadow: 0 0 0 9999px rgba(20, 20, 20, 0.55); /* 框外变暗 */
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5); /* 框外变暗 */
   touch-action: none;
 }
 
